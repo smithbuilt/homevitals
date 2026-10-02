@@ -886,3 +886,15 @@ def test_old_named_pin_is_rewritten_only_when_it_points_elsewhere(tmp_path, monk
     # Only the pinned old-named copy is checked (desktop ones get the new name instead), and it's already right.
     assert len(asked) == 1 and str(old_pin) in asked[0] and str(desktop_old) not in asked[0]
     assert scripts == []
+
+
+def test_main_window_says_which_other_apps_need_no_setup(root, tmp_path):
+    app = gui.App(root, config_path=tmp_path / "config.yaml")
+    texts = [w.cget("text") for w in app.other_apps_note.winfo_children()]
+    assert texts == [gui.gui_logic.OTHER_APPS_NOTE_TITLE, gui.gui_logic.OTHER_APPS_NOTE]
+    note = " ".join(texts)
+    for service in ("Runalyze", "intervals.icu", "TrainingPeaks", "Strava"):
+        assert service in note
+    # Only what the services' own pages confirm: Runalyze is the one that gets blood pressure.
+    assert "Runalyze gets weight and blood pressure" in note
+    assert "not weight or blood pressure" in note

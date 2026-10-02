@@ -64,6 +64,19 @@ Then click **Sync now**, and tick **Automatic sync (every 4 hours)**. While a sy
 
 **Numbers are never changed.** Readings go to Garmin exactly as measured. One that Garmin won't accept is skipped and reported, never rounded.
 
+## Runalyze, intervals.icu, TrainingPeaks and Strava
+
+You don't connect these in HomeVitals. Many training apps already get health readings from Garmin Connect, so once HomeVitals puts a reading in Garmin, they pick it up by themselves. Link each one to Garmin Connect in its own settings:
+
+| App | Gets from Garmin Connect | Source |
+|---|---|---|
+| Runalyze | Weight and blood pressure (also resting heart rate, sleep, HRV) | [Runalyze changelog](https://runalyze.com/changelog?_locale=en): weight 2020, blood pressure 2022 |
+| intervals.icu | Weight and body fat %, **not blood pressure** | [weight](https://forum.intervals.icu/t/garmin-health-snapshots-supported/9150), [body fat](https://forum.intervals.icu/t/body-fat-from-garmin-now-supported/108339) (developer's posts) |
+| TrainingPeaks | Weight | [TrainingPeaks help](https://help.trainingpeaks.com/hc/en-us/articles/204070864) |
+| Strava | Activities only, **not weight or blood pressure** | [Garmin and Strava](https://support.strava.com/hc/en-us/articles/216918057-Garmin-and-Strava) |
+
+Checked in October 2026. These apps change what they import, so their own pages have the final word.
+
 ## Privacy and security
 
 - Everything runs on your own computer. HomeVitals talks only to Eufy, OMRON and Garmin, with the accounts you give it.

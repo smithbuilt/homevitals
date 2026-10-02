@@ -27,6 +27,8 @@ MUTED = "#5B6B78"
 DANGER = "#B42318"
 DISABLED_TEXT = "#9AA8B3"
 SELECTED = "#C9DFF2"
+NOTE_BG = "#EAF3FB"
+NOTE_BORDER = "#B7D3EC"
 
 FONT = ("Segoe UI", 10)
 FONT_BOLD = ("Segoe UI Semibold", 10)
@@ -215,6 +217,12 @@ def apply(root: tk.Misc) -> ttk.Style:
     # Cards: the account boxes (window colour inside) and the white panels (list, messages).
     _element(style, "Card.border", root, {"": (BG, BORDER)})
     _element(style, "Panel.border", root, {"": (PANEL, BORDER)})
+    # The soft blue note card (other apps that get the readings from Garmin).
+    _element(style, "Note.border", root, {"": (NOTE_BG, NOTE_BORDER)})
+    style.layout("Note.TFrame", [("Note.border", {"sticky": "nsew"})])
+    style.configure("Note.TFrame", background=NOTE_BG)
+    style.configure("Note.TLabel", background=NOTE_BG, foreground=TEXT)
+    style.configure("NoteTitle.TLabel", background=NOTE_BG, foreground=BLUE_DARK, font=FONT_BOLD)
     style.layout("Card.TFrame", [("Card.border", {"sticky": "nsew"})])
     style.layout("Panel.TFrame", [("Panel.border", {"sticky": "nsew"})])
     style.configure("Card.TFrame", background=BG)

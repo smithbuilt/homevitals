@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1
+
+- A note at the top of the window: Runalyze, intervals.icu and TrainingPeaks get these readings from Garmin Connect, so there's nothing to set up for them here (Runalyze: weight and blood pressure; intervals.icu and TrainingPeaks: weight). Strava takes activities from Garmin, but not weight or blood pressure. The README lists the sources.
+- The launcher path for shortcuts and automatic sync keeps its spelling when completed (fixes the tests on machines with a `C:	ools` folder).
+
 ## 1.0.0
 
 First release of HomeVitals, a fork of [eufy-sync](https://github.com/sturimcode/eufy-sync) 1.13.2 for whole households.

@@ -95,7 +95,7 @@ class App:
         self.tray = None                 # set by main() when the tray icon is showing
         self._told_about_tray = False
         root.title(TITLE)
-        root.minsize(780, 540)
+        root.minsize(780, 600)
         root.protocol("WM_DELETE_WINDOW", self.on_close)
         icon = gui_logic.icon_path()
         if icon is not None:
@@ -115,6 +115,14 @@ class App:
 
         outer = ttk.Frame(root, padding=(PAD * 2, PAD * 2, PAD * 2, PAD * 2))
         outer.pack(fill="both", expand=True)
+
+        note = ttk.Frame(outer, style="Note.TFrame", padding=(PAD + 6, PAD, PAD + 6, PAD))
+        note.pack(fill="x", pady=(0, PAD + 4))
+        self.other_apps_note = note
+        ttk.Label(note, text=gui_logic.OTHER_APPS_NOTE_TITLE, style="NoteTitle.TLabel", wraplength=720,
+                  justify="left").pack(anchor="w")
+        ttk.Label(note, text=gui_logic.OTHER_APPS_NOTE, style="Note.TLabel", wraplength=720,
+                  justify="left").pack(anchor="w", pady=(2, 0))
 
         ttk.Label(outer, text="People who sync to Garmin", style="Title.TLabel").pack(anchor="w")
         self.list_frame = ttk.Frame(outer, style="Panel.TFrame", padding=(3, 3))

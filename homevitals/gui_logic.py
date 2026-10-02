@@ -1183,6 +1183,16 @@ OLD_SHORTCUT_NAMES = ("Health Sync for Garmin", "Household scale sync")
 GUI_LAUNCHER = "homevitals-gui"
 
 
+# Other apps that already get these readings from Garmin Connect, so nothing needs setting
+# up in HomeVitals for them. Checked against each service's own help pages and developer
+# posts (2026-10): Runalyze imports weight and blood pressure from Garmin; intervals.icu
+# and TrainingPeaks import weight but not blood pressure; Strava imports activities only.
+OTHER_APPS_NOTE_TITLE = "Using Runalyze, intervals.icu or TrainingPeaks? There's nothing to set up here."
+OTHER_APPS_NOTE = ("Link them to Garmin Connect in their own settings and they pick up these readings from Garmin: "
+                   "Runalyze gets weight and blood pressure; intervals.icu and TrainingPeaks get weight (not blood "
+                   "pressure). Strava takes activities from Garmin, but not weight or blood pressure.")
+
+
 def icon_png_path() -> Path | None:
     """The logo as a PNG (for the window's header band)."""
     path = Path(__file__).with_name("assets") / "app_icon.png"

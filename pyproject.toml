@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "homevitals"
-version = "1.0.0"
+version = "1.0.1"
 description = "Sync your household's smart scale and blood pressure readings to each person's own Garmin Connect account. Works for Garmin Connect."
 readme = "README.md"
 license = "MIT"
