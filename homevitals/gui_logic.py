@@ -1165,7 +1165,7 @@ def shortcut_plan() -> ShortcutPlan | None:
     if found and Path(found).exists():
         # Always a full path: started from the launcher's own folder, which() answers ".\\homevitals-gui.EXE",
         # and a shortcut to that points nowhere.
-        found = str(Path(found).resolve())
+        found = os.path.abspath(found)
         return ShortcutPlan(found, "", str(Path(found).parent))
     beside = Path(sys.executable).with_name(f"{GUI_LAUNCHER}.exe")
     if beside.exists():

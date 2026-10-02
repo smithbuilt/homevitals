@@ -8,6 +8,7 @@ touching a real Task Scheduler.
 from __future__ import annotations
 
 import base64
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -420,7 +421,7 @@ def test_task_uses_a_full_path_even_when_which_answers_a_relative_one(data_dir, 
          patch.object(windows.subprocess, "run", return_value=_ok()):
         windows.install_agent()
     wrapper = (data_dir / windows.WRAPPER_NAME).read_text(encoding="utf-8")
-    assert str((bin_dir / "homevitals.EXE").resolve()) in wrapper
+    assert os.path.abspath(bin_dir / "homevitals.EXE") in wrapper
     assert ".\\homevitals.EXE" not in wrapper
 
 
@@ -440,3 +441,12 @@ def test_repair_agent_leaves_automatic_sync_off_alone(data_dir):
          patch.object(windows.subprocess, "run") as run:
         assert windows.repair_agent() is False
     run.assert_not_called()
+
+
+def test_full_path_keeps_the_given_spelling(data_dir, tmp_path, monkeypatch):
+    # GitHub's Windows machines have a real C:\tools: asking Windows for the real path would turn
+    # "C:\Tools\..." into "C:\tools\...". Only a relative answer from which() is made full.
+    (tmp_path / "tools").mkdir()
+    spelled = str(tmp_path / "Tools" / "homevitals.exe")
+    with patch.object(windows.shutil, "which", return_value=spelled):
+        assert windows._binary() == spelled

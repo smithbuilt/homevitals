@@ -16,11 +16,11 @@ fire-and-forget.
 from __future__ import annotations
 
 import base64
+import os
 import platform
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 
 from homevitals.cli import shared
 
@@ -136,7 +136,7 @@ def _binary() -> str | None:
     """The full path of homevitals. which() answers ".\\homevitals.EXE" when the current folder
     holds it, and the task (which starts in another folder) would then find nothing."""
     found = shutil.which(BINARY_NAME)
-    return str(Path(found).resolve()) if found else None
+    return os.path.abspath(found) if found else None
 
 
 def _install_scheduled_task() -> None:

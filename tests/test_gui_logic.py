@@ -3,6 +3,7 @@
 """
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 import threading
@@ -1574,8 +1575,8 @@ def test_shortcut_plan_uses_a_full_path_even_when_which_answers_a_relative_one(t
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(gui_logic.shutil, "which", lambda name: ".\\homevitals-gui.EXE")
     plan = gui_logic.shortcut_plan()
-    assert Path(plan.target).is_absolute() and Path(plan.target) == launcher.resolve()
-    assert Path(plan.working_dir) == tmp_path.resolve()
+    assert Path(plan.target).is_absolute() and plan.target == os.path.abspath(launcher)
+    assert plan.working_dir == os.path.abspath(tmp_path)
 
 
 def test_startup_box_sees_the_old_startup_shortcut_and_removes_both(tmp_path, monkeypatch):
