@@ -1,0 +1,57 @@
+name: Release to PyPI
+
+# Runs when a version tag (v1.0.0) is pushed. PyPI trusts this workflow through
+# "trusted publishing": no password or token is stored anywhere.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
+
+  publish:
+    needs: checks
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Tag, pyproject.toml and __version__ must agree
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ver=$(grep -E '^version = ' pyproject.toml | sed -E 's/version = "(.*)"/\1/')
+          dunder=$(grep -E '^__version__ = ' homevitals/__init__.py | sed -E 's/__version__ = "(.*)"/\1/')
+          if [ "$tag" != "$ver" ] || [ "$tag" != "$dunder" ]; then
+            echo "Tag $GITHUB_REF_NAME, pyproject.toml ($ver) and __version__ ($dunder) disagree. Not publishing."
+            exit 1
+          fi
+          echo "Versions agree: $ver"
+      - run: pip install build
+      - run: python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "HomeVitals $GITHUB_REF_NAME"

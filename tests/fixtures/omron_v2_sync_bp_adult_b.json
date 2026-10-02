@@ -1,0 +1,34 @@
+{
+  "data": [
+    {
+      "seq": 2001,
+      "userNumberInDevice": 1,
+      "measurementDate": 1759388400000,
+      "timeZone": -14400,
+      "systolic": 142,
+      "diastolic": 93,
+      "pulse": 67,
+      "irregularHB": 0,
+      "movementDetect": 0,
+      "cuffWrapDetect": 0,
+      "isManualEntry": 0,
+      "deleteFlag": 0,
+      "notes": "SENTINEL-NEVER-LOG-B1"
+    },
+    {
+      "seq": 2002,
+      "userNumberInDevice": 1,
+      "measurementDate": 1759392000000,
+      "timeZone": -14400,
+      "systolic": 128,
+      "diastolic": 80,
+      "pulse": 62,
+      "irregularHB": 0,
+      "movementDetect": 0,
+      "cuffWrapDetect": 0,
+      "isManualEntry": 0,
+      "deleteFlag": 0,
+      "notes": "SENTINEL-NEVER-LOG-B2"
+    }
+  ]
+}

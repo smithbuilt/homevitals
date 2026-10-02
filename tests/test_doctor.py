@@ -1,0 +1,815 @@
+"""Tests for homevitals --doctor.
+
+Every client/token_status/subprocess call is mocked - no network, no real
+keychain, no real Launch Agent. The doctor must never let an exception
+escape as a traceback; every failure is a printed line.
+"""
+from __future__ import annotations
+
+import time
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+import yaml
+
+from homevitals import credentials, platform_support
+from homevitals.cli import doctor
+from homevitals.config import AppConfig, EufyConfig, GarminConfig, StravaConfig, UserConfig
+from homevitals.platform_support import generic, macos
+
+
+@pytest.fixture(autouse=True)
+def _not_household(request, monkeypatch):
+    """The upstream version checks below test the PyPI path, which the household
+    build turns off. Pretend to be upstream unless a test opts out by name."""
+    if "household" in request.node.name:
+        return
+    monkeypatch.setattr("homevitals.cli.updater._self_update_disabled", lambda: False)
+
+
+def _write_config(path: Path, *, garmin: bool = True, strava: bool = True, customer_id: str | None = "abc1234567890867f") -> None:
+    users = [{
+        "name": "default",
+        "eufy": {"email": "e@example.com", "password": "pw", **({"customer_id": customer_id} if customer_id else {})},
+    }]
+    if garmin:
+        users[0]["garmin"] = {"email": "g@example.com", "password": "pw"}
+    if strava:
+        users[0]["strava"] = {"client_id": "123", "client_secret": "secret"}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        yaml.dump({"users": users}, f)
+
+
+def _app_config(*, garmin: bool = True, strava: bool = True, customer_id: str | None = "abc1234567890867f") -> AppConfig:
+    user = UserConfig(
+        name="default",
+        eufy=EufyConfig(email="e@example.com", password="pw", customer_id=customer_id),
+        garmin=GarminConfig(email="g@example.com", password="pw") if garmin else None,
+        strava=StravaConfig(client_id="123", client_secret="secret") if strava else None,
+    )
+    return AppConfig(users=[user])
+
+
+class _FakeMeasurement:
+    def __init__(self, timestamp):
+        self.timestamp = timestamp
+        self.weight_kg = 70.0
+
+
+def _patch_all_pass(tmp_path, monkeypatch):
+    """Patch every dependency of _run_doctor to a healthy state."""
+    config_path = tmp_path / "config.yaml"
+    db_path = tmp_path / "state.db"
+    _write_config(config_path)
+
+    app_config = _app_config()
+
+    monkeypatch.setattr(doctor, "load_config", MagicMock(return_value=app_config))
+    monkeypatch.setattr(credentials, "_keyring_available", lambda: True)
+
+    eufy_client = MagicMock()
+    eufy_client.token_status.return_value = {"state": "valid", "days_remaining": 21}
+    recent = datetime.now(timezone.utc) - timedelta(hours=5)
+    eufy_client.fetch_measurements.return_value = [_FakeMeasurement(recent)]
+    monkeypatch.setattr(doctor, "EufyClient", MagicMock(return_value=eufy_client))
+
+    garmin_client = MagicMock()
+    monkeypatch.setattr(doctor, "GarminClient", MagicMock(return_value=garmin_client))
+
+    strava_client = MagicMock()
+    strava_client.token_status.return_value = {"state": "valid", "days_remaining": None, "hours_remaining": 5}
+    monkeypatch.setattr(doctor, "StravaClient", MagicMock(return_value=strava_client))
+
+    monkeypatch.setattr(platform_support, "_active", macos)
+    wrapper = tmp_path / "eufy-sync-agent"
+    wrapper.write_text("#!/bin/sh\n")
+    monkeypatch.setattr(macos, "LAUNCH_AGENT_PATH", tmp_path / "agent.plist")
+    plist = f"""<?xml version="1.0"?>
+<plist><dict>
+<key>ProgramArguments</key>
+<array><string>{wrapper}</string></array>
+</dict></plist>"""
+    macos.LAUNCH_AGENT_PATH.write_text(plist)
+    monkeypatch.setattr(
+        macos.subprocess, "run",
+        MagicMock(return_value=MagicMock(stdout=macos.LAUNCH_AGENT_LABEL, returncode=0)),
+    )
+
+    state = MagicMock()
+    recent_sync = time.time() - 3600 * 2
+    state.get_latest_sync_timestamp.return_value = int(recent_sync)
+    monkeypatch.setattr(doctor, "SyncState", MagicMock(return_value=state))
+
+    monkeypatch.setattr(doctor.updater, "_latest_pypi_version", MagicMock(return_value=_current_version()))
+
+    return config_path, db_path
+
+
+def _current_version() -> str:
+    from homevitals import __version__
+    return __version__
+
+
+def test_all_pass_exits_zero_and_prints_summary(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "All checks passed." in out
+    assert "FAIL" not in out
+    doctor.GarminClient.return_value.authenticate.assert_called_once_with(allow_interactive=False)
+    for client in (doctor.GarminClient.return_value, doctor.StravaClient.return_value):
+        client.check_connection.assert_called_once()
+        client.close.assert_called_once()
+
+
+def test_garmin_login_requiring_mfa_fails_with_exact_fix_and_exit_1(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    doctor.GarminClient.return_value.authenticate.side_effect = RuntimeError(
+        "Garmin wants an MFA code. Run: homevitals --reauth garmin"
+    )
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL" in out
+    assert "garmin session" in out
+    assert "fix: homevitals --reauth garmin" in out
+
+
+def test_no_config_fails_and_skips_remaining_checks_without_prompting(tmp_path, monkeypatch, capsys):
+    config_path = tmp_path / "config.yaml"  # does not exist
+    db_path = tmp_path / "state.db"
+
+    mock_input = MagicMock(side_effect=AssertionError("input() must never be called by --doctor"))
+    monkeypatch.setattr("builtins.input", mock_input)
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL" in out
+    assert "config" in out
+    assert "no config" in out.lower()
+    # Remaining checks explicitly skipped, not silently omitted
+    assert "skip" in out.lower()
+    mock_input.assert_not_called()
+
+
+def test_eufy_cloud_exception_prints_fail_line_not_traceback(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    doctor.EufyClient.return_value.fetch_measurements.side_effect = RuntimeError("boom: connection reset")
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL" in out
+    assert "eufy cloud" in out
+    assert "boom: connection reset" in out
+    assert "Traceback" not in out
+
+
+def test_eufy_cloud_password_error_suggests_update_password(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    doctor.EufyClient.return_value.fetch_measurements.side_effect = RuntimeError(
+        "If you changed your Eufy password, run: homevitals --update-password"
+    )
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL" in out
+    assert "eufy cloud" in out
+    assert "fix: homevitals --update-password" in out
+
+
+def test_stale_weighin_warns_with_open_app_hint(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    stale = datetime.now(timezone.utc) - timedelta(days=3)
+    doctor.EufyClient.return_value.fetch_measurements.return_value = [_FakeMeasurement(stale)]
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert code == 0  # WARN alone does not fail the run
+    assert "WARN" in out
+    assert "eufy cloud" in out
+    assert "open the Eufy app" in out
+
+
+def test_launch_agent_pointing_at_raw_binary_warns_install_agent(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    plist = """<?xml version="1.0"?>
+<plist><dict>
+<key>ProgramArguments</key>
+<array><string>/Users/x/.local/bin/homevitals</string></array>
+</dict></plist>"""
+    macos.LAUNCH_AGENT_PATH.write_text(plist)
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "WARN" in out
+    assert "launch agent" in out
+    assert "outdated registration" in out
+    assert "fix: homevitals --install-agent" in out
+
+
+def test_launch_agent_pointing_at_legacy_wrapper_warns_install_agent(tmp_path, monkeypatch, capsys):
+    """A plist still pointing at the pre-1.7.17 run-sync.sh wrapper is an
+    outdated registration: re-running --install-agent adopts the recognizable
+    eufy-sync-agent name (and gives the user one final, well-named background
+    announcement)."""
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    legacy = tmp_path / "run-sync.sh"
+    legacy.write_text("#!/bin/sh\n")
+    plist = f"""<?xml version="1.0"?>
+<plist><dict>
+<key>ProgramArguments</key>
+<array><string>{legacy}</string></array>
+</dict></plist>"""
+    macos.LAUNCH_AGENT_PATH.write_text(plist)
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "outdated registration" in out
+    assert "fix: homevitals --install-agent" in out
+
+
+def test_version_newer_available_warns_with_update_fix(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    doctor.updater._latest_pypi_version = MagicMock(return_value="99.0.0")
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "WARN" in out
+    assert "version" in out
+    assert "99.0.0" in out
+    assert "fix: homevitals --update" in out
+
+
+def test_warnings_alone_still_exit_zero(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    # Several WARN-only conditions at once.
+    stale = datetime.now(timezone.utc) - timedelta(days=5)
+    doctor.EufyClient.return_value.fetch_measurements.return_value = [_FakeMeasurement(stale)]
+    doctor.updater._latest_pypi_version = MagicMock(return_value="99.0.0")
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "FAIL" not in out
+    assert out.count("WARN") >= 2
+    # A warning-only run exits 0, so the summary must not claim problems.
+    assert "warning(s), nothing blocking" in out
+    assert "problem(s) found" not in out
+
+
+def test_eufy_cloud_check_authenticates_before_fetching(tmp_path, monkeypatch, capsys):
+    """Caught live: the mocked client hid that fetch_measurements requires a
+    prior authenticate(); the real client raises without it. Pin the order."""
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    calls = []
+    client = doctor.EufyClient.return_value
+    client.authenticate.side_effect = lambda: calls.append("authenticate")
+    original_fetch = client.fetch_measurements.return_value
+
+    def fetch(**kwargs):
+        if "authenticate" not in calls:
+            raise RuntimeError("Must authenticate before fetching measurements")
+        return original_fetch
+
+    client.fetch_measurements.side_effect = fetch
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert "Must authenticate" not in out
+    assert "PASS  eufy cloud" in out
+    assert code == 0
+
+
+def test_doctor_dispatches_before_wizard_via_main(tmp_path, capsys):
+    """--doctor through the real entry point: a no-config run must report and
+    exit 1 without ever entering the first-run wizard. Guards the dispatch
+    ORDER in app.main(), which the direct _run_doctor tests cannot see."""
+    from homevitals.cli.app import main
+
+    def boom_input(*a, **k):
+        raise AssertionError("wizard input() must not be called for --doctor")
+
+    argv = ["homevitals", "--doctor",
+            "--config", str(tmp_path / "missing" / "config.yaml"),
+            "--db", str(tmp_path / "state.db")]
+    with patch("sys.argv", argv), \
+         patch("builtins.input", side_effect=boom_input), \
+         pytest.raises(SystemExit) as exc:
+        main()
+
+    assert exc.value.code == 1
+    out = capsys.readouterr().out
+    assert "FAIL" in out and "config" in out
+    assert "first time setup" not in out
+
+
+def test_eufy_token_expired_is_warn_not_fail(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    doctor.EufyClient.return_value.token_status.return_value = {"state": "expired", "days_remaining": 0}
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert "WARN" in out
+    assert "eufy token" in out
+    assert code == 0
+
+
+def test_strava_rejected_session_fails_with_setup_fix(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    doctor.StravaClient.return_value.check_connection.side_effect = RuntimeError(
+        "Strava rejected the session. Run: homevitals --setup-strava"
+    )
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL" in out
+    assert "strava token" in out
+    assert "fix: homevitals --setup-strava" in out
+
+
+def test_live_connection_failure_is_not_reported_as_a_valid_saved_token(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    for client in (doctor.GarminClient.return_value, doctor.StravaClient.return_value):
+        client.check_connection.side_effect = RuntimeError("network is unreachable")
+
+    assert doctor._run_doctor(config_path, db_path) == 1
+    out = capsys.readouterr().out
+    assert "FAIL  garmin session" in out
+    assert "FAIL  strava token" in out
+    assert "--reauth" not in out
+    for client in (doctor.GarminClient.return_value, doctor.StravaClient.return_value):
+        client.close.assert_called_once()
+
+
+def test_doctor_waits_for_sync_to_finish_before_refreshing_tokens(tmp_path, capsys):
+    from homevitals.cli import lock
+    from homevitals.cli.app import main
+
+    with lock.single_instance() as acquired:
+        assert acquired
+        with patch("sys.argv", ["homevitals", "--doctor"]), \
+             patch.object(doctor, "_run_doctor") as diagnostic, \
+             pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 1
+    diagnostic.assert_not_called()
+    assert "Retry --doctor" in capsys.readouterr().out
+
+
+def test_profile_unset_warns_with_select_profile_fix(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    single_profile_config = _app_config(customer_id=None)
+    doctor.load_config.return_value = single_profile_config
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert "WARN" in out
+    assert "profile" in out
+    assert "fix: homevitals --select-profile" in out
+    assert code == 0
+
+
+def test_keychain_stray_unmarked_file_warns_adopt_or_delete(tmp_path, monkeypatch):
+    """A credentials file that was not created by --use-file-store is ignored
+    while the keychain works. Doctor must surface it: it holds a stale copy
+    of secrets that nothing reads or updates."""
+
+    stray = tmp_path / "credentials.json"
+    stray.write_text('{"passwords": {"default:eufy": "old"}, "tokens": {}}')
+    monkeypatch.setattr(credentials, "CRED_FILE", stray)
+    monkeypatch.setattr(credentials, "_keyring_available", lambda: True)
+
+    lines = []
+
+    def report(status, label, detail, fix=None):
+        lines.append((status, label, detail, fix))
+
+    doctor._check_keychain(report)
+
+    status, label, detail, fix = lines[0]
+    assert status == "WARN"
+    assert label == "keychain"
+    assert detail == "keychain active; unused credentials file at ~/.homevitals/credentials.json"
+    assert fix == "homevitals --use-file-store (adopt it) or delete the file"
+
+
+def test_keychain_fallback_never_fails(tmp_path, monkeypatch, capsys):
+    """With no keychain backend, credentials fall back to the 0o600 file
+    store automatically - this is a normal, working configuration, not a
+    problem, so it must report PASS, never FAIL or WARN."""
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    monkeypatch.setattr(doctor, "active_store_label", MagicMock(return_value="file (~/.homevitals/credentials.json)"))
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert "PASS" in out
+    assert "keychain" in out
+    assert "file" in out
+    # keychain must never contribute a FAIL or WARN line of its own
+    assert "FAIL  keychain" not in out
+    assert "WARN  keychain" not in out
+    assert code == 0
+
+
+def test_launch_agent_not_installed_warns(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    macos.LAUNCH_AGENT_PATH.unlink()
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert "WARN" in out
+    assert "launch agent" in out
+    assert "not installed" in out
+    assert "fix: homevitals --install-agent" in out
+    assert code == 0
+
+
+def test_launch_agent_not_loaded_warns(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    macos.subprocess.run = MagicMock(return_value=MagicMock(stdout="", returncode=0))
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert "WARN" in out
+    assert "launch agent" in out
+    assert "installed but not loaded" in out
+    assert "fix: homevitals --install-agent" in out
+    assert code == 0
+
+
+def test_launch_agent_skipped_on_non_macos(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    monkeypatch.setattr(platform_support, "_active", generic)
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert "launch agent" not in out
+    assert code == 0
+
+
+def test_state_db_never_synced(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    doctor.SyncState.return_value.get_latest_sync_timestamp.return_value = None
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert "never synced" in out
+    assert code == 0
+
+
+def test_state_db_open_failure_fails(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    doctor.SyncState = MagicMock(side_effect=RuntimeError("disk full"))
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL" in out
+    assert "state db" in out
+    assert "disk full" in out
+
+
+def test_version_check_unreachable_warns(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    doctor.updater._latest_pypi_version = MagicMock(return_value=None)
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert "WARN" in out
+    assert "could not check" in out
+    assert code == 0
+
+
+def test_config_parse_error_fails_with_message(tmp_path, monkeypatch, capsys):
+    config_path = tmp_path / "config.yaml"
+    db_path = tmp_path / "state.db"
+    _write_config(config_path)
+    monkeypatch.setattr(doctor, "load_config", MagicMock(side_effect=ValueError("bad yaml: line 3")))
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL" in out
+    assert "bad yaml: line 3" in out
+
+
+def test_garmin_and_strava_skipped_when_not_configured(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    doctor.load_config.return_value = _app_config(garmin=False, strava=False)
+
+    code = doctor._run_doctor(config_path, db_path)
+
+    out = capsys.readouterr().out
+    assert "garmin session" not in out
+    assert "strava token" not in out
+    assert code == 0
+
+
+# ---------------------------------------------------------------------------
+# Household: every person checked, shared checks once (WP7)
+# ---------------------------------------------------------------------------
+
+def _two_user_app_config() -> AppConfig:
+    return AppConfig(users=[
+        UserConfig(name="Chris",
+                   eufy=EufyConfig(email="scale@example.com", password="pw", customer_id="adult-a-0001"),
+                   garmin=GarminConfig(email="adult-a@example.com", password="pw")),
+        UserConfig(name="Jane",
+                   eufy=EufyConfig(email="scale@example.com", password="pw", customer_id="adult-b-0002"),
+                   garmin=GarminConfig(email="adult-b@example.com", password="pw")),
+    ])
+
+
+def _patch_two_users(tmp_path, monkeypatch):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    monkeypatch.setattr(doctor, "load_config", MagicMock(return_value=_two_user_app_config()))
+    return config_path, db_path
+
+
+def test_two_users_each_get_profile_token_garmin_cloud_and_state_lines(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_two_users(tmp_path, monkeypatch)
+    code = doctor._run_doctor(config_path, db_path)
+    out = capsys.readouterr().out
+    assert code == 0
+    for name in ("Chris", "Jane"):
+        for label in ("profile", "eufy token", "garmin session", "eufy cloud", "state db"):
+            assert f"{name}: {label}" in out, (name, label, out)
+    emails = [c.args[0].email for c in doctor.GarminClient.call_args_list]
+    assert emails == ["adult-a@example.com", "adult-b@example.com"]
+
+
+def test_shared_checks_run_once_with_two_users(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_two_users(tmp_path, monkeypatch)
+    doctor._run_doctor(config_path, db_path)
+    lines = capsys.readouterr().out.splitlines()
+    assert sum(1 for line in lines if " keychain " in f" {line} ") == 1
+    assert sum(1 for line in lines if " version " in f" {line} ") == 1
+    agent_label = platform_support.agent_status()["label"]
+    assert sum(1 for line in lines if agent_label in line) == 1
+
+
+def test_single_user_labels_are_unprefixed(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    doctor._run_doctor(config_path, db_path)
+    out = capsys.readouterr().out
+    assert "default: " not in out
+    assert "PASS  garmin session" in out
+
+
+def test_config_line_counts_users(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_two_users(tmp_path, monkeypatch)
+    doctor._run_doctor(config_path, db_path)
+    assert "valid (2 users, targets: garmin)" in capsys.readouterr().out
+
+
+def test_config_line_single_user_unchanged(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    doctor._run_doctor(config_path, db_path)
+    assert "valid (1 user, targets: garmin, strava)" in capsys.readouterr().out
+
+
+def test_doctor_calls_migrate_legacy_tokens(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_two_users(tmp_path, monkeypatch)
+    migrate = MagicMock(return_value=[])
+    monkeypatch.setattr(credentials, "migrate_legacy_tokens", migrate)
+    doctor._run_doctor(config_path, db_path)
+    migrate.assert_called_once()
+    assert [u.name for u in migrate.call_args.args[0]] == ["Chris", "Jane"]
+
+
+def test_doctor_migration_failure_is_a_warning_not_a_crash(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_two_users(tmp_path, monkeypatch)
+    monkeypatch.setattr(credentials, "migrate_legacy_tokens", MagicMock(side_effect=RuntimeError("locked")))
+    code = doctor._run_doctor(config_path, db_path)
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "WARN" in out and "config" in out
+
+
+def test_household_build_version_line_passes_without_pypi(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    monkeypatch.setattr(doctor.updater, "_self_update_disabled", lambda: True)
+    latest = MagicMock(side_effect=AssertionError("PyPI checked"))
+    monkeypatch.setattr(doctor.updater, "_latest_pypi_version", latest)
+    doctor._run_doctor(config_path, db_path)
+    out = capsys.readouterr().out
+    assert "update with: uv tool upgrade homevitals" in out
+    latest.assert_not_called()
+
+
+def test_one_user_failing_does_not_hide_the_other(tmp_path, monkeypatch, capsys):
+    config_path, db_path = _patch_two_users(tmp_path, monkeypatch)
+    chris_client, jane_client = MagicMock(), MagicMock()
+    chris_client.authenticate.side_effect = RuntimeError("Garmin wants an MFA code. Run: homevitals --reauth garmin")
+    monkeypatch.setattr(doctor, "GarminClient", MagicMock(side_effect=[chris_client, jane_client]))
+    code = doctor._run_doctor(config_path, db_path)
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL  Chris: garmin session" in out
+    assert "PASS  Jane: garmin session" in out
+    assert "Jane: state db" in out
+
+
+# ---------------------------------------------------------------------------
+# Part 4: an OMRON connect line for each person with a monitor (WP18)
+# ---------------------------------------------------------------------------
+
+def _omron_app_config(jane_omron=True) -> AppConfig:
+    from homevitals.config import OmronConfig
+    config = _two_user_app_config()
+    config.users[0].omron = OmronConfig(email="adult-a@example.com", password="pw", country="CA")
+    if jane_omron:
+        config.users[1].omron = OmronConfig(email="adult-b@example.com", password="pw", country="QA", server="eu")
+    return config
+
+
+def _fake_readings(n):
+    from homevitals.omron_client import BloodPressureReading
+    return [BloodPressureReading(f"bp-{i}", datetime.now(timezone.utc), 137, 89, 58, False, False, False, 1)
+            for i in range(n)]
+
+
+def _patch_omron(tmp_path, monkeypatch, config, readings=(), side_effect=None):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    monkeypatch.setattr(doctor, "load_config", MagicMock(return_value=config))
+    omron = MagicMock()
+    omron.fetch_readings.return_value = list(readings)
+    if side_effect is not None:
+        omron.authenticate.side_effect = side_effect
+    monkeypatch.setattr(doctor, "OmronClient", MagicMock(return_value=omron))
+    return config_path, db_path, omron
+
+
+def test_omron_line_per_user_with_omron_counts_only(tmp_path, monkeypatch, capsys):
+    config_path, db_path, _ = _patch_omron(tmp_path, monkeypatch, _omron_app_config(), _fake_readings(3))
+    code = doctor._run_doctor(config_path, db_path)
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "PASS  Chris: omron" in out and "PASS  Jane: omron" in out
+    assert "connected; 3 readings in the last 30 days" in out
+    emails = [c.args[0].email for c in doctor.OmronClient.call_args_list]
+    assert emails == ["adult-a@example.com", "adult-b@example.com"]
+
+
+def test_no_omron_line_for_users_without_omron(tmp_path, monkeypatch, capsys):
+    config_path, db_path, _ = _patch_omron(tmp_path, monkeypatch, _omron_app_config(jane_omron=False),
+                                           _fake_readings(1))
+    doctor._run_doctor(config_path, db_path)
+    out = capsys.readouterr().out
+    assert "Chris: omron" in out and "connected; 1 reading in the last 30 days" in out
+    assert "Jane: omron" not in out
+
+
+def test_omron_no_readings_warns_with_app_hint(tmp_path, monkeypatch, capsys):
+    config_path, db_path, _ = _patch_omron(tmp_path, monkeypatch, _omron_app_config(), [])
+    code = doctor._run_doctor(config_path, db_path)
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "WARN  Chris: omron" in out
+    assert "open the OMRON connect app on the phone" in out
+
+
+def test_omron_login_failure_fails_with_update_password_fix_and_user_flag_when_multi(tmp_path, monkeypatch, capsys):
+    from homevitals.omron_client import OmronLoginError
+    error = OmronLoginError("OMRON connect rejected the login for adult-a@example.com (country CA). Check the email, "
+                            "the password, and the country the account was created in; tried h. "
+                            "Run: homevitals --update-password")
+    config_path, db_path, _ = _patch_omron(tmp_path, monkeypatch, _omron_app_config(), side_effect=error)
+    code = doctor._run_doctor(config_path, db_path)
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL  Chris: omron" in out
+    assert "fix: homevitals --update-password --user Chris" in out
+
+
+def test_omron_login_failure_single_user_fix_has_no_user_flag(tmp_path, monkeypatch, capsys):
+    from homevitals.config import OmronConfig
+    from homevitals.omron_client import OmronLoginError
+    config = _app_config()
+    config.users[0].omron = OmronConfig(email="o@example.com", password="pw", country="CA")
+    config_path, db_path, _ = _patch_omron(tmp_path, monkeypatch, config,
+                                           side_effect=OmronLoginError("rejected. Run: homevitals --update-password"))
+    doctor._run_doctor(config_path, db_path)
+    out = capsys.readouterr().out
+    assert "fix: homevitals --update-password" in out and "--user" not in out
+
+
+def test_omron_check_closes_client_even_on_failure(tmp_path, monkeypatch):
+    config_path, db_path, omron = _patch_omron(tmp_path, monkeypatch, _omron_app_config(),
+                                               side_effect=RuntimeError("boom"))
+    doctor._run_doctor(config_path, db_path)
+    assert omron.close.call_count == 2
+
+
+def test_omron_line_never_contains_numbers(tmp_path, monkeypatch, capsys):
+    import re
+
+    from garminconnect import GarminConnectConnectionError
+    config_path, db_path, omron = _patch_omron(tmp_path, monkeypatch, _omron_app_config(), _fake_readings(2))
+    doctor._run_doctor(config_path, db_path)
+    out = capsys.readouterr().out
+    omron.authenticate.side_effect = GarminConnectConnectionError("API Error 400 - 137/89/58")
+    doctor._run_doctor(config_path, db_path)
+    out += capsys.readouterr().out
+    for value in ("137", "89", "58"):
+        assert not re.search(rf"\b{value}\b", out)
+
+
+# ---------------------------------------------------------------------------
+# Part 5: partly set up people (WP24)
+# ---------------------------------------------------------------------------
+
+def _partial_app_config() -> AppConfig:
+    from homevitals.config import OmronConfig
+    return AppConfig(users=[
+        UserConfig(name="Chris", eufy=EufyConfig(email="scale@example.com", password="pw", customer_id="adult-a-0001"),
+                   garmin=GarminConfig(email="adult-a@example.com", password="pw")),
+        UserConfig(name="Jane", eufy=None, garmin=GarminConfig(email="adult-b@example.com", password="pw")),
+        UserConfig(name="Sam", eufy=EufyConfig(email="scale@example.com", password="pw", customer_id="adult-b-0002")),
+        UserConfig(name="Kim", eufy=None, omron=None),
+        UserConfig(name="Lee", eufy=None, omron=OmronConfig(email="o@example.com", password="pw", country="CA")),
+    ])
+
+
+def _run_partial(tmp_path, monkeypatch, capsys, config=None):
+    config_path, db_path = _patch_all_pass(tmp_path, monkeypatch)
+    monkeypatch.setattr(doctor, "load_config", MagicMock(return_value=config or _partial_app_config()))
+    monkeypatch.setattr(doctor, "OmronClient", MagicMock())
+    code = doctor._run_doctor(config_path, db_path)
+    return code, capsys.readouterr().out
+
+
+def test_setup_warning_for_garmin_only_person(tmp_path, monkeypatch, capsys):
+    _, out = _run_partial(tmp_path, monkeypatch, capsys)
+    assert "WARN  Jane: setup" in out
+    assert "not fully set up: connect the scale or the blood pressure monitor in the HomeVitals window" in out
+
+
+def test_setup_warning_for_eufy_only_person_names_garmin(tmp_path, monkeypatch, capsys):
+    _, out = _run_partial(tmp_path, monkeypatch, capsys)
+    assert "Sam: setup" in out and "not fully set up: connect Garmin in the HomeVitals window" in out
+
+
+def test_setup_warning_for_name_only_person_says_not_set_up_yet(tmp_path, monkeypatch, capsys):
+    _, out = _run_partial(tmp_path, monkeypatch, capsys)
+    assert "Kim: setup" in out and "not set up yet: connect Garmin and the scale or the blood pressure monitor" in out
+
+
+def test_no_eufy_checks_for_person_without_scale(tmp_path, monkeypatch, capsys):
+    _, out = _run_partial(tmp_path, monkeypatch, capsys)
+    for label in ("Jane: profile", "Jane: eufy token", "Jane: eufy cloud"):
+        assert label not in out
+    assert "Jane: garmin session" in out
+    assert "Jane: state db" in out
+
+
+def test_ready_person_gets_no_setup_line(tmp_path, monkeypatch, capsys):
+    _, out = _run_partial(tmp_path, monkeypatch, capsys)
+    assert "Chris: setup" not in out
+
+
+def test_config_line_targets_none_when_nobody_has_a_target(tmp_path, monkeypatch, capsys):
+    config = AppConfig(users=[UserConfig(name="Kim", eufy=None)])
+    _, out = _run_partial(tmp_path, monkeypatch, capsys, config=config)
+    assert "valid (1 user, targets: none)" in out
+
+
+def test_partly_set_up_household_exits_zero_with_warnings(tmp_path, monkeypatch, capsys):
+    code, out = _run_partial(tmp_path, monkeypatch, capsys)
+    assert code == 0
+    assert "warning(s), nothing blocking." in out

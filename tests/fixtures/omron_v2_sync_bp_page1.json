@@ -1,0 +1,20 @@
+{
+  "data": [
+    {
+      "seq": 3001,
+      "userNumberInDevice": 1,
+      "measurementDate": 1759300000000,
+      "timeZone": -14400,
+      "systolic": 121,
+      "diastolic": 79,
+      "pulse": 60,
+      "irregularHB": 0,
+      "movementDetect": 0,
+      "cuffWrapDetect": 0,
+      "isManualEntry": 0,
+      "deleteFlag": 0,
+      "notes": "SENTINEL-NEVER-LOG-P1"
+    }
+  ],
+  "nextpaginationKey": 7
+}

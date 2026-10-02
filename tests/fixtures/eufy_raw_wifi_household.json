@@ -1,0 +1,27 @@
+{
+  "res_code": 1,
+  "list": [
+    {
+      "id": "fake-raw-adult-a-0001",
+      "weight": "79.90",
+      "impedance": "500000",
+      "timestamp": "1790575200",
+      "heart_rate": "0",
+      "customer_id": "adult-a-0001",
+      "device_id": "scale-0001",
+      "user_id": "fake-uid",
+      "product_code": ""
+    },
+    {
+      "id": "fake-raw-kid-c-0003",
+      "weight": "30.80",
+      "impedance": "500000",
+      "timestamp": "1790582400",
+      "heart_rate": "0",
+      "customer_id": "kid-c-0003",
+      "device_id": "scale-0001",
+      "user_id": "fake-uid",
+      "product_code": ""
+    }
+  ]
+}

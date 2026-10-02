@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "homevitals"
+version = "1.0.0"
+description = "Sync your household's smart scale and blood pressure readings to each person's own Garmin Connect account. Works for Garmin Connect."
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Christopher Smith" }]
+requires-python = ">=3.12"
+keywords = [
+    "garmin connect",
+    "eufy",
+    "eufylife",
+    "smart scale",
+    "omron",
+    "omron connect",
+    "blood pressure",
+    "body composition",
+    "weight sync",
+    "household",
+    "family",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+    "httpx>=0.27.0",
+    "keyring>=25.0.0",
+    "garminconnect>=0.3.10",
+    "curl_cffi>=0.15.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# The browser fallback for a rate-limited Garmin login. Opt-in: Playwright is
+# several times the size of everything else, and most installs never need it.
+browser = ["playwright>=1.40.0"]
+
+[project.scripts]
+homevitals = "homevitals.cli:main"
+
+[project.gui-scripts]
+homevitals-gui = "homevitals.gui:main"
+
+[project.urls]
+Homepage = "https://github.com/smithbuilt/homevitals"
+Repository = "https://github.com/smithbuilt/homevitals"
+Issues = "https://github.com/smithbuilt/homevitals/issues"
+Changelog = "https://github.com/smithbuilt/homevitals/blob/main/CHANGELOG.md"
+"Based on" = "https://github.com/sturimcode/eufy-sync"
+
+[tool.setuptools.packages.find]
+include = ["homevitals*"]
+
+[tool.setuptools.package-data]
+homevitals = ["assets/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+# Correctness and import hygiene only. Style rules that would rewrite working
+# code for no behavior gain stay off.
+select = ["F", "E4", "E7", "E9", "B", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["homevitals"]

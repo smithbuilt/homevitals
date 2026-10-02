@@ -1,0 +1,12 @@
+{
+  "dateWeightList": [
+    {
+      "samplePk": 1000000001,
+      "date": 1789884000000,
+      "calendarDate": "2026-09-20",
+      "weight": 80200.0,
+      "timestampGMT": 1789884000000,
+      "sourceType": "MANUAL"
+    }
+  ]
+}

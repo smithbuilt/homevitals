@@ -1,0 +1,21 @@
+{
+  "from": "2025-10-01",
+  "to": "2025-10-03",
+  "measurementSummaries": [
+    {
+      "startDate": "2025-10-02",
+      "measurements": [
+        {
+          "version": 5000001,
+          "systolic": 137,
+          "diastolic": 89,
+          "pulse": 58,
+          "measurementTimestampLocal": "2025-10-02T05:00:00.0",
+          "measurementTimestampGMT": "2025-10-02T09:00:00.0",
+          "sourceType": "MANUAL",
+          "notes": "Omron M7"
+        }
+      ]
+    }
+  ]
+}

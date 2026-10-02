@@ -1,0 +1,141 @@
+{
+  "res_code": 1,
+  "data": [
+    {
+      "customer_id": "adult-a-0001",
+      "device_id": "scale-0001",
+      "create_time": 1789884000,
+      "update_time": 1789884000,
+      "scale_data": {
+        "weight": 802,
+        "body_fat": 20.0,
+        "muscle_mass": 40.0,
+        "water": 55.0,
+        "bone_mass": 3.0,
+        "bmr": 1500,
+        "visceral_fat": 7.0,
+        "body_age": 30,
+        "bmi": 22.0
+      }
+    },
+    {
+      "customer_id": "adult-a-0001",
+      "device_id": "scale-0001",
+      "create_time": 1790316000,
+      "update_time": 1790316000,
+      "scale_data": {
+        "weight": 800,
+        "body_fat": 20.0,
+        "muscle_mass": 40.0,
+        "water": 55.0,
+        "bone_mass": 3.0,
+        "bmr": 1500,
+        "visceral_fat": 7.0,
+        "body_age": 30,
+        "bmi": 22.0
+      }
+    },
+    {
+      "customer_id": "adult-b-0002",
+      "device_id": "scale-0001",
+      "create_time": 1789887600,
+      "update_time": 1789887600,
+      "scale_data": {
+        "weight": 621,
+        "body_fat": 21.0,
+        "muscle_mass": 35.0,
+        "water": 55.0,
+        "bone_mass": 3.0,
+        "bmr": 1400,
+        "visceral_fat": 7.0,
+        "body_age": 30,
+        "bmi": 22.0
+      }
+    },
+    {
+      "customer_id": "adult-b-0002",
+      "device_id": "scale-0001",
+      "create_time": 1790319600,
+      "update_time": 1790319600,
+      "scale_data": {
+        "weight": 619,
+        "body_fat": 21.0,
+        "muscle_mass": 35.0,
+        "water": 55.0,
+        "bone_mass": 3.0,
+        "bmr": 1400,
+        "visceral_fat": 7.0,
+        "body_age": 30,
+        "bmi": 22.0
+      }
+    },
+    {
+      "customer_id": "kid-c-0003",
+      "device_id": "scale-0001",
+      "create_time": 1789891200,
+      "update_time": 1789891200,
+      "scale_data": {
+        "weight": 304,
+        "body_fat": 22.0,
+        "muscle_mass": 30.0,
+        "water": 55.0,
+        "bone_mass": 3.0,
+        "bmr": 1300,
+        "visceral_fat": 7.0,
+        "body_age": 30,
+        "bmi": 22.0
+      }
+    },
+    {
+      "customer_id": "kid-c-0003",
+      "device_id": "scale-0001",
+      "create_time": 1790323200,
+      "update_time": 1790323200,
+      "scale_data": {
+        "weight": 306,
+        "body_fat": 22.0,
+        "muscle_mass": 30.0,
+        "water": 55.0,
+        "bone_mass": 3.0,
+        "bmr": 1300,
+        "visceral_fat": 7.0,
+        "body_age": 30,
+        "bmi": 22.0
+      }
+    },
+    {
+      "customer_id": "kid-d-0004",
+      "device_id": "scale-0001",
+      "create_time": 1789894800,
+      "update_time": 1789894800,
+      "scale_data": {
+        "weight": 240,
+        "body_fat": 23.0,
+        "muscle_mass": 25.0,
+        "water": 55.0,
+        "bone_mass": 3.0,
+        "bmr": 1200,
+        "visceral_fat": 7.0,
+        "body_age": 30,
+        "bmi": 22.0
+      }
+    },
+    {
+      "customer_id": "kid-d-0004",
+      "device_id": "scale-0001",
+      "create_time": 1790326800,
+      "update_time": 1790326800,
+      "scale_data": {
+        "weight": 242,
+        "body_fat": 23.0,
+        "muscle_mass": 25.0,
+        "water": 55.0,
+        "bone_mass": 3.0,
+        "bmr": 1200,
+        "visceral_fat": 7.0,
+        "body_age": 30,
+        "bmi": 22.0
+      }
+    }
+  ]
+}

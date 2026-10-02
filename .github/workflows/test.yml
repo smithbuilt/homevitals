@@ -1,0 +1,28 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Weekly, so a dependency or Python release that breaks the suite shows up between releases.
+  schedule:
+    - cron: "0 12 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
+
+  ci:
+    name: CI
+    if: ${{ always() }}
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every shared check to pass
+        env:
+          CHECKS_RESULT: ${{ needs.checks.result }}
+        run: test "$CHECKS_RESULT" = success

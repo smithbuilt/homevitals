@@ -1,0 +1,13 @@
+users:
+  - name: Chris
+    eufy:
+      email: scale@example.com
+      customer_id: adult-a-0001
+    garmin:
+      email: adult-a@example.com
+  - name: Jane
+    eufy:
+      email: scale@example.com
+      customer_id: adult-b-0002
+    garmin:
+      email: adult-b@example.com

@@ -1,0 +1,55 @@
+name: Bug report
+description: Report a setup or sync problem.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before sharing anything, remove email addresses, profile IDs, health numbers, passwords and tokens. `sync.log` and `homevitals --doctor` output are written to be safe to share, but please look first.
+  - type: input
+    id: version
+    attributes:
+      label: HomeVitals version
+      description: Run `homevitals --version`, or say if installation failed.
+    validations:
+      required: true
+  - type: input
+    id: operating-system
+    attributes:
+      label: Operating system
+      placeholder: Windows 11
+    validations:
+      required: true
+  - type: input
+    id: devices
+    attributes:
+      label: Scale and blood pressure monitor
+      description: Model names, and the OMRON connect country if blood pressure is involved.
+      placeholder: Eufy Smart Scale P2 Pro, OMRON M7 Intelli IT (United Kingdom)
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected part
+      multiple: true
+      options:
+        - Garmin Connect
+        - Eufy scale
+        - OMRON connect / blood pressure
+        - The window
+        - Automatic sync
+        - Installation
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostic output
+      description: Output of `homevitals --doctor`, or the relevant part of `~/.homevitals/sync.log` (personal data removed).
+      render: text

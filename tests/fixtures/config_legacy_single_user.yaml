@@ -1,0 +1,6 @@
+users:
+  - name: default
+    eufy:
+      email: scale@example.com
+    garmin:
+      email: adult-a@example.com

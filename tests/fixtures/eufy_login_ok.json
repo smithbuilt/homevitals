@@ -1,0 +1,6 @@
+{
+  "res_code": 1,
+  "access_token": "fake-eufy-token",
+  "user_id": "fake-uid",
+  "expires_in": 2592000
+}

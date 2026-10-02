@@ -1,0 +1,17 @@
+users:
+  - name: Chris
+    eufy:
+      email: scale@example.com
+      customer_id: adult-a-0001
+    garmin:
+      email: adult-a@example.com
+    omron:
+      email: adult-a@example.com
+      country: CA
+  - name: Jane
+    garmin:
+      email: adult-b@example.com
+  - name: Sam
+    eufy:
+      email: scale@example.com
+      customer_id: adult-b-0002
