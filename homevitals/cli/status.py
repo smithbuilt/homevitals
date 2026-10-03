@@ -85,11 +85,16 @@ def _bp_detail_lines(name: str, result) -> list[str]:
     if result.skipped_out_of_range:
         lines.append(f"{name}: blood pressure - skipped {_readings(result.skipped_out_of_range)} with values outside "
                      "the range Garmin accepts (nothing was changed or rounded).")
+    if result.skipped_rejected:
+        n = result.skipped_rejected
+        lines.append(f"{name}: blood pressure - Garmin refused {_readings(n)}, so "
+                     f"{'they were' if n != 1 else 'it was'} skipped (nothing was changed). Details are in the log.")
     if result.skipped_in_garmin:
         n = result.skipped_in_garmin
         lines.append(f"{name}: blood pressure - Garmin already had {_readings(n)}, so "
                      f"{'they were' if n != 1 else 'it was'} skipped.")
-    if not (result.uploaded or result.skipped_in_garmin or result.skipped_out_of_range or result.error):
+    if not (result.uploaded or result.skipped_in_garmin or result.skipped_out_of_range or result.skipped_rejected
+            or result.error):
         lines.append(f"{name}: blood pressure - no new readings. Open the OMRON connect app on the phone so it "
                      "picks up readings from the monitor, then sync again.")
     return [_ascii(line) for line in lines]
@@ -199,6 +204,21 @@ def _print_summary(
         )
 
 
+def _retry_queue_line(state, user) -> str | None:
+    """'2 uploads waiting to retry (Garmin)', or None when nothing waits.
+    Targets no longer configured are left out: nothing will retry them."""
+    waiting = {
+        target: count
+        for target, count in state.waiting_upload_retries(user.name).items()
+        if getattr(user, target, None) is not None
+    }
+    total = sum(waiting.values())
+    if not total:
+        return None
+    names = ", ".join(target.capitalize() for target in sorted(waiting))
+    return f"{total} upload{'' if total == 1 else 's'} waiting to retry ({names})"
+
+
 def _show_status(state, users: list) -> None:
     """Print detailed sync status for all users."""
     for user in users:
@@ -215,6 +235,10 @@ def _show_status(state, users: list) -> None:
             print(f"Last synced measurement: {last_sync.strftime('%Y-%m-%d %H:%M UTC')} ({hours}h ago)")
         else:
             print("Last synced measurement: never")
+
+        retry_line = _retry_queue_line(state, user)
+        if retry_line:
+            print(retry_line)
 
         # Eufy token health
         from homevitals.eufy_client import EufyClient

@@ -1,6 +1,6 @@
 """Sync Eufy smart scale body composition data to Garmin Connect and Strava."""
 
-__version__ = "1.0.3"
+__version__ = "1.0.4"
 
 # Public API for programmatic use
 from homevitals.eufy_client import EufyClient, EufyMeasurement

@@ -43,6 +43,12 @@ GARMIN_SAME_TIME_TOLERANCE_SECONDS = 2
 GARMIN_BP_LIMITS = {"systolic": (70, 260), "diastolic": (40, 150), "pulse": (20, 250)}
 NOTES_DEVICE = "Omron M7"
 SKIPPED_OUT_OF_RANGE_RESPONSE = '{"skipped": "outside_garmin_range"}'
+# Garmin refused this one reading (a 4xx that is not about the login or the rate). Sending
+# the same values again gets the same answer, so it is skipped like an out-of-range one
+# rather than holding every newer reading back on each run.
+SKIPPED_REJECTED_RESPONSE = '{"skipped": "rejected_by_garmin"}'
+# 4xx answers that are about the session, the network or the rate, not the reading.
+_NOT_ABOUT_THE_READING = (401, 403, 408, 429)
 
 
 @dataclass
@@ -54,6 +60,7 @@ class BpSyncResult:
     skipped_synced: int = 0
     skipped_in_garmin: int = 0
     skipped_out_of_range: int = 0
+    skipped_rejected: int = 0        # Garmin refused the reading itself (HTTP 4xx)
     error: str | None = None         # plain text (safe_error_text) when an upload failed
 
 
@@ -114,13 +121,25 @@ def safe_error_text(exc: BaseException) -> str:
     return f"Unexpected error ({type(exc).__name__}). Details are in the log file."
 
 
+def rejected_status(exc: BaseException) -> int | None:
+    """The HTTP status when Garmin refused this one reading, else None."""
+    if not isinstance(exc, GarminConnectConnectionError) or isinstance(exc, GarminConnectTooManyRequestsError):
+        return None
+    from homevitals.garmin_client import _status_code
+    status = _status_code(exc)
+    if status is None or not 400 <= status < 500 or status in _NOT_ABOUT_THE_READING:
+        return None
+    return status
+
+
 def _retry_quietly(fn: Callable[[], T], description: str) -> T:
     """sync._retry, but its log lines carry safe_error_text instead of the raw error."""
     for attempt in range(MAX_RETRIES):
         try:
             return fn()
         except Exception as e:
-            if _is_permanent(e) or isinstance(e, ValueError) or attempt == MAX_RETRIES - 1:
+            if (_is_permanent(e) or isinstance(e, ValueError) or rejected_status(e) is not None
+                    or attempt == MAX_RETRIES - 1):
                 raise
             delay = RETRY_BASE_DELAY * (2 ** attempt)
             logger.warning("%s failed (attempt %d/%d): %s. Retrying in %ds...",
@@ -193,6 +212,14 @@ def sync_blood_pressure(user: UserConfig, state: SyncState, *, headless: bool = 
                 _record(state, user.name, reading, SKIPPED_OUT_OF_RANGE_RESPONSE)
                 continue
             except Exception as e:
+                status = rejected_status(e)
+                if status is not None:
+                    # About this reading only: skip it, never change it, and carry on with newer ones.
+                    result.skipped_rejected += 1
+                    _record(state, user.name, reading, SKIPPED_REJECTED_RESPONSE)
+                    logger.warning("Garmin refused a blood pressure reading for %s (HTTP %d); skipped it, "
+                                   "nothing was changed", user.name, status)
+                    continue
                 result.error = safe_error_text(e)
                 logger.error("Blood pressure upload failed for %s: %s", user.name, result.error)
                 break
@@ -201,8 +228,9 @@ def sync_blood_pressure(user: UserConfig, state: SyncState, *, headless: bool = 
             time.sleep(1)
 
         logger.info("Blood pressure for %s: %d uploaded, %d already synced, %d already in Garmin, "
-                    "%d outside Garmin's range", user.name, result.uploaded, result.skipped_synced,
-                    result.skipped_in_garmin, result.skipped_out_of_range)
+                    "%d outside Garmin's range, %d refused by Garmin", user.name, result.uploaded,
+                    result.skipped_synced, result.skipped_in_garmin, result.skipped_out_of_range,
+                    result.skipped_rejected)
         return result
     finally:
         for client in (omron, garmin):

@@ -343,3 +343,50 @@ def test_garmin_accepts_mirrors_library_limits(fixtures):
     by = _by_systolic(_readings(fixtures))
     assert bp_sync.garmin_accepts(by[137])
     assert not bp_sync.garmin_accepts(by[265])
+
+
+def test_a_reading_garmin_refuses_is_skipped_and_newer_ones_still_upload(state, fixtures, caplog):
+    caplog.set_level(logging.DEBUG)
+    readings = [r for r in _readings(fixtures) if r.systolic != 265]
+    assert len(readings) >= 3
+    first = readings[0]
+    garmin = MagicMock()
+    garmin.upload_blood_pressure.side_effect = (
+        [GarminConnectConnectionError(f"API Error 400 - body {first.systolic}/{first.diastolic}")]
+        + [{}] * (len(readings) - 1)
+    )
+    result, *_ = _run(_user(), state, readings, garmin=garmin)
+    assert result.skipped_rejected == 1
+    assert result.uploaded == len(readings) - 1
+    assert result.error is None
+    # Refused once, not retried: the same values get the same answer.
+    assert garmin.upload_blood_pressure.call_count == len(readings)
+    assert state.is_synced("Chris", first.reading_id, BP_TARGET)
+    messages = "\n".join(r.getMessage() for r in caplog.records)
+    assert "HTTP 400" in messages
+    assert f"{first.systolic}/{first.diastolic}" not in messages
+
+    # The next run does not send it again.
+    result, _, garmin2, *_ = _run(_user(), state, readings)
+    garmin2.upload_blood_pressure.assert_not_called()
+
+
+@pytest.mark.parametrize("status", [401, 403, 408, 429, 500, 503])
+def test_session_rate_and_server_errors_still_stop_the_loop(state, fixtures, status):
+    readings = [r for r in _readings(fixtures) if r.systolic != 265]
+    garmin = MagicMock()
+    garmin.upload_blood_pressure.side_effect = GarminConnectConnectionError(f"API Error {status} - ")
+    result, *_ = _run(_user(), state, readings, garmin=garmin)
+    assert result.skipped_rejected == 0
+    assert result.uploaded == 0
+    assert result.error
+    assert not state.is_synced("Chris", readings[0].reading_id, BP_TARGET)
+
+
+def test_status_line_reports_refused_readings_without_values():
+    from homevitals.cli.status import _bp_detail_lines
+
+    result = bp_sync.BpSyncResult(fetched=3, uploaded=2, skipped_rejected=1)
+    lines = _bp_detail_lines("Chris", result)
+    assert lines == ["Chris: blood pressure - Garmin refused 1 reading, so it was skipped (nothing was changed). "
+                     "Details are in the log."]

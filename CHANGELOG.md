@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.4
+
+More reliability fixes from [eufy-sync](https://github.com/sturimcode/eufy-sync) 1.14 and 1.15.
+
+- Garmin on blocked networks: on some connections (VPNs, some internet providers) Garmin's Cloudflare protection refuses every call after a good login, with "403 Forbidden". A refused call is now tried once more through a browser-like connection using the same login, and if that works, the rest of the sync uses it. This covers weigh-ins and blood pressure.
+- At most one Garmin re-login per person per sync. Repeated logins in one run make Garmin's "too many requests" block more likely, and a second try minutes later meets the same security-code request or wrong password anyway.
+- Eufy login: if Eufy's original login address stops working, HomeVitals tries once at the address the current EufyLife app uses. Never after a wrong password or a rate limit.
+- One weigh-in that keeps failing no longer holds back newer ones. Failed uploads wait in a retry list; after 14 days or 84 tries a stuck one stops blocking (it still gets one try per sync), and it is given up only after 30 days of failures while newer weigh-ins kept uploading, so an outage never loses a measurement. `homevitals --status` shows how many uploads are waiting.
+- Garmin's answers to an upload are sorted properly: "already have it" (409) counts as uploaded only once a lookup finds the weigh-in on Garmin, a rate limit stops Garmin for the rest of that sync, and a refusal that a fresh login can't fix is reported once instead of being retried.
+- Blood pressure: a reading Garmin refuses outright (an HTTP 4xx that isn't about the login or the rate) is skipped, never changed, and reported, instead of holding back every newer reading. Login, rate-limit and server problems still stop the sync and are retried next time.
+- The look-back for weight-only Garmin entries still waiting for their full record is capped at 14 days, so an old one no longer makes every sync refetch everything since then.
+
 ## 1.0.3
 
 Reliability fixes, most of them taken from [eufy-sync](https://github.com/sturimcode/eufy-sync) 1.14 and 1.15. Thanks to Elias Sturim for pointing them out.

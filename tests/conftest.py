@@ -28,6 +28,29 @@ def _is_loopback(host) -> bool:
         return False
 
 
+# The real curl_cffi entry points, saved by _no_real_network before it blocks them.
+_REAL_CURL: dict = {}
+
+
+@pytest.fixture
+def loopback_curl(monkeypatch):
+    """Let this test's curl_cffi Session reach loopback addresses only (a local test server)."""
+    from urllib.parse import urlsplit
+
+    import curl_cffi
+    import curl_cffi.requests as cffi_requests
+
+    real_request = _REAL_CURL["request"]
+
+    def loopback_only(self, method, url, *args, **kwargs):
+        if not _is_loopback(urlsplit(str(url)).hostname):
+            raise RealNetworkAttempt(f"test tried to make a real curl_cffi request to {url}")
+        return real_request(self, method, url, *args, **kwargs)
+
+    monkeypatch.setattr(cffi_requests.Session, "request", loopback_only)
+    monkeypatch.setattr(curl_cffi.Curl, "perform", _REAL_CURL["perform"])
+
+
 @pytest.fixture(autouse=True)
 def _no_real_network(monkeypatch):
     """Any attempt to reach a non-loopback host fails loudly.
@@ -66,6 +89,9 @@ def _no_real_network(monkeypatch):
         import curl_cffi.requests as cffi_requests
     except ImportError:
         return
+
+    _REAL_CURL["request"] = cffi_requests.Session.request
+    _REAL_CURL["perform"] = curl_cffi.Curl.perform
 
     def blocked(*args, **kwargs):
         raise RealNetworkAttempt("test tried to make a real curl_cffi request")
