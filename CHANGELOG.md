@@ -1,9 +1,13 @@
 # Changelog
 
+## 1.0.2
+
+- The window's title bar and the tray icon's hover text show the version (for example "HomeVitals 1.0.2"), so you can see which version is running.
+
 ## 1.0.1
 
 - A note at the top of the window: Runalyze, intervals.icu and TrainingPeaks get these readings from Garmin Connect, so there's nothing to set up for them here (Runalyze: weight and blood pressure; intervals.icu and TrainingPeaks: weight). Strava takes activities from Garmin, but not weight or blood pressure. The README lists the sources.
-- The launcher path for shortcuts and automatic sync keeps its spelling when completed (fixes the tests on machines with a `C:	ools` folder).
+- The launcher path for shortcuts and automatic sync keeps its spelling when completed (fixes the tests on machines with a `C:\tools` folder).
 
 ## 1.0.0
 

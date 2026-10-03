@@ -25,7 +25,7 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Any, TypeVar
 
-from homevitals import garmin_auth, gui_logic, platform_support, theme
+from homevitals import __version__, garmin_auth, gui_logic, platform_support, theme
 from homevitals.cli import lock, shared
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 TITLE = shared.APP_NAME
+# The title bar and the tray icon's hover text show the version, so it's easy to see which copy is running.
+VERSIONED_TITLE = f"{TITLE} {__version__}"
 GENERIC_ERROR = "Something went wrong. Details were saved to the log file (~/.homevitals/sync.log)."
 SYNC_RUNNING = "A sync is running right now. Wait for it to finish, then try again."
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -94,7 +96,7 @@ class App:
         self._spinning = False
         self.tray = None                 # set by main() when the tray icon is showing
         self._told_about_tray = False
-        root.title(TITLE)
+        root.title(VERSIONED_TITLE)
         root.minsize(780, 600)
         root.protocol("WM_DELETE_WINDOW", self.on_close)
         icon = gui_logic.icon_path()
@@ -1519,7 +1521,7 @@ def _start_tray(app: App) -> None:
     icon = gui_logic.icon_path()
     if icon is None or sys.platform != "win32":
         return
-    icon_obj = tray_module.TrayIcon(str(icon), TITLE, {
+    icon_obj = tray_module.TrayIcon(str(icon), VERSIONED_TITLE, {
         "open": lambda: app.post(app.show_window),
         "sync": lambda: app.post(app.on_sync_now),
         "quit": lambda: app.post(app.quit),
@@ -1539,7 +1541,7 @@ def main() -> None:
             logger.info("Moved to the HomeVitals name: %s", line)
         with contextlib.suppress(Exception):
             enable_crash_log()
-        from homevitals import __version__, tray
+        from homevitals import tray
         if tray.signal_running_instance():
             # Already running (probably in the tray): that copy opens its window instead.
             logger.info("Window already running; asked it to open")

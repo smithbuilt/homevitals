@@ -800,9 +800,10 @@ def test_old_shortcuts_move_to_the_new_name(tmp_path, monkeypatch, old):
     assert moved == [1]
 
 
-def test_window_title_is_the_new_name(root, tmp_path):
+def test_window_title_is_the_name_and_version(root, tmp_path):
+    from homevitals import __version__
     gui.App(root, config_path=tmp_path / "config.yaml")
-    assert root.title() == "HomeVitals"
+    assert root.title() == f"HomeVitals {__version__}"
 
 
 def test_start_up_fixes_shortcuts_that_point_at_the_wrong_program(tmp_path, monkeypatch):
