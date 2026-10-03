@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.3
+
+Reliability fixes, most of them taken from [eufy-sync](https://github.com/sturimcode/eufy-sync) 1.14 and 1.15. Thanks to Elias Sturim for pointing them out.
+
+- Saved logins are crash-safe. A household's saved logins are too big for one Credential Manager entry, so they are split into pieces. Each save used to overwrite those pieces one by one, so a save cut short (a crash, a shutdown) could leave a mix of old and new pieces that read as empty, and the next save would then overwrite every saved login. Each save now writes new pieces and switches over only at the very end, with a checksum. A damaged store is reported in Fix problems instead of being treated as empty, and two HomeVitals processes (the window and the scheduled sync) take turns saving.
+- Moving over from eufy-sync 1.14 or later now copies the saved logins too. Before, the newer storage format wasn't recognised, so nothing was copied and people had to connect their accounts again.
+- A Garmin re-login keeps the saved session until the new login works. Before, it deleted the session first, so a cancelled or missing security code (two-step verification), or a passing Garmin error, cost a session that may still have been good. The same now applies to OMRON connect.
+- After updating, don't go back to 1.0.2 or earlier: those versions can't read the new storage format.
+
 ## 1.0.2
 
 - The window's title bar and the tray icon's hover text show the version (for example "HomeVitals 1.0.2"), so you can see which version is running.

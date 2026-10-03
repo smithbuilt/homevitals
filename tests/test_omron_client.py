@@ -234,12 +234,13 @@ def test_login_transport_error_moves_to_next_host(fixtures):
     assert get_token("omron:adult-a@example.com")["base_url"] == EU2
 
 
-def test_login_clears_stale_cached_token_on_total_failure():
-    store_token("omron:adult-a@example.com", {"access_token": "old", "refresh_token": "old", "base_url": NA})
+def test_a_failed_login_keeps_the_saved_session():
+    saved = {"access_token": "old", "refresh_token": "old", "base_url": NA}
+    store_token("omron:adult-a@example.com", dict(saved))
     server = FakeOmron(default=lambda r: httpx.Response(401))
     with pytest.raises(oc.OmronLoginError):
         server.client().authenticate(force_login=True)
-    assert get_token("omron:adult-a@example.com") is None
+    assert get_token("omron:adult-a@example.com") == saved
 
 
 def test_authenticate_uses_cached_token_and_its_base_url_without_network(fixtures):

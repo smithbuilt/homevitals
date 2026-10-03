@@ -18,8 +18,8 @@ import shutil
 logger = logging.getLogger(__name__)
 
 OLD_SERVICE_NAME = "eufy-garmin-sync"
-# Not worth carrying over: a lock held by a run of the old version, and half-written temp files.
-_SKIP_NAMES = {"sync.lock", "__pycache__"}
+# Not worth carrying over: locks held by a run of the old version, and half-written temp files.
+_SKIP_NAMES = {"sync.lock", "vault.lock", "__pycache__"}
 
 
 def _skip(_folder: str, names: list[str]) -> set[str]:

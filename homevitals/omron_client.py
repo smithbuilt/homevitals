@@ -316,10 +316,6 @@ class OmronClient:
         store_token(self._token_name(), {"access_token": self._access, "refresh_token": self._refresh,
                                          "base_url": self._base, "saved_at": time.time()})
 
-    def _clear_cached_token(self) -> None:
-        from homevitals.credentials import delete_token
-        delete_token(self._token_name())
-
     # -- login ---------------------------------------------------------------
 
     def _password_login(self) -> None:
@@ -339,7 +335,8 @@ class OmronClient:
             self._save_token()
             logger.info("Logged in to OMRON connect at %s for %s", host_of(base), self.config.email)
             return
-        self._clear_cached_token()
+        # The saved session is left alone: a failed login (a mistyped password in a check,
+        # every server unreachable for a moment) says nothing about whether it still works.
         raise OmronLoginError(
             f"OMRON connect rejected the login for {self.config.email} (country {self.config.country}). Check the "
             f"email, the password, and the country the account was created in; tried {', '.join(tried)}. "

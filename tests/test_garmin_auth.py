@@ -73,17 +73,53 @@ def test_token_status_valid_with_blob(monkeypatch):
     assert auth.token_status()["state"] == "valid"
 
 
-def test_force_reauth_clears_token_logs_in_and_saves(monkeypatch):
+def test_force_reauth_logs_in_and_saves(monkeypatch):
     auth = _auth()
     calls = []
-    monkeypatch.setattr(auth, "_clear_token", lambda: calls.append("clear"))
     monkeypatch.setattr(auth, "_save_token", lambda g: calls.append("save"))
     fake_garmin = MagicMock()
     with patch("homevitals.garmin_auth.Garmin", return_value=fake_garmin):
         result = auth.force_reauth()
     assert result is fake_garmin
     fake_garmin.login.assert_called_once()
-    assert calls == ["clear", "save"]   # cleared before login, saved after
+    assert calls == ["save"]
+
+
+NEW_BLOB = {"di_token": "new", "di_refresh_token": "new-r", "di_client_id": "cid"}
+
+
+def _store_old_token():
+    from homevitals.credentials import store_token
+    store_token(_auth()._token_name(), dict(BLOB))
+
+
+def _stored_token():
+    from homevitals.credentials import get_token
+    return get_token(_auth()._token_name())
+
+
+def test_force_reauth_keeps_the_stored_token_when_login_fails(monkeypatch):
+    # A cancelled security-code box or a passing Garmin error must not cost the
+    # session that was stored before the attempt (eufy-sync 1.14).
+    from homevitals.garmin_auth import GarminLoginCancelled
+    _store_old_token()
+    auth = _auth()
+    fake = MagicMock()
+    fake.login.side_effect = GarminLoginCancelled("no code")
+    with patch("homevitals.garmin_auth.Garmin", return_value=fake):
+        with pytest.raises(PermanentSyncError):
+            auth.force_reauth()
+    assert _stored_token() == BLOB
+
+
+def test_force_reauth_replaces_the_stored_token_on_success():
+    _store_old_token()
+    auth = _auth()
+    fake = MagicMock()
+    fake.client.dumps.return_value = json.dumps(NEW_BLOB)
+    with patch("homevitals.garmin_auth.Garmin", return_value=fake):
+        auth.force_reauth()
+    assert _stored_token() == NEW_BLOB
 
 
 def test_login_falls_back_to_fresh_when_blob_unusable(monkeypatch):
@@ -315,10 +351,9 @@ def test_headless_mfa_prompt_cancels_without_reading_input(monkeypatch):
         _headless_mfa_prompt()
 
 
-def test_silent_reauth_clears_token_logs_in_and_saves(monkeypatch):
+def test_silent_reauth_logs_in_and_saves(monkeypatch):
     auth = _auth()
     calls = []
-    monkeypatch.setattr(auth, "_clear_token", lambda: calls.append("clear"))
     monkeypatch.setattr(auth, "_save_token", lambda g: calls.append("save"))
     _fail_on_browser(monkeypatch)
     fake = MagicMock()
@@ -326,7 +361,46 @@ def test_silent_reauth_clears_token_logs_in_and_saves(monkeypatch):
         result = auth.silent_reauth()
     assert result is fake
     fake.login.assert_called_once()
-    assert calls == ["clear", "save"]
+    assert calls == ["save"]
+
+
+def test_silent_reauth_keeps_the_stored_token_when_garmin_wants_mfa(monkeypatch):
+    # A scheduled sync has nobody to type a security code. A session that only
+    # looked dead must survive the failed relogin, or a person with two-step
+    # verification has to connect Garmin again by hand.
+    from homevitals.garmin_auth import GarminLoginCancelled
+    _store_old_token()
+    _fail_on_browser(monkeypatch)
+    auth = _auth()
+    fake = MagicMock()
+    fake.login.side_effect = GarminLoginCancelled("mfa")
+    with patch("homevitals.garmin_auth.Garmin", return_value=fake):
+        with pytest.raises(PermanentSyncError):
+            auth.silent_reauth()
+    assert _stored_token() == BLOB
+
+
+def test_silent_reauth_keeps_the_stored_token_on_a_transient_failure(monkeypatch):
+    _store_old_token()
+    _fail_on_browser(monkeypatch)
+    auth = _auth()
+    fake = MagicMock()
+    fake.login.side_effect = ConnectionError("Connection reset by peer")
+    with patch("homevitals.garmin_auth.Garmin", return_value=fake):
+        with pytest.raises(ConnectionError):
+            auth.silent_reauth()
+    assert _stored_token() == BLOB
+
+
+def test_silent_reauth_replaces_the_stored_token_on_success(monkeypatch):
+    _store_old_token()
+    _fail_on_browser(monkeypatch)
+    auth = _auth()
+    fake = MagicMock()
+    fake.client.dumps.return_value = json.dumps(NEW_BLOB)
+    with patch("homevitals.garmin_auth.Garmin", return_value=fake):
+        assert auth.silent_reauth() is fake
+    assert _stored_token() == NEW_BLOB
 
 
 def test_silent_reauth_mfa_demand_names_reauth(monkeypatch):
