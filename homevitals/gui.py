@@ -15,6 +15,7 @@ import contextlib
 import functools
 import io
 import logging
+import os
 import queue
 import subprocess
 import sys
@@ -42,9 +43,25 @@ PAD = 8
 LABEL_COLUMN = 215      # the label column of every account form, so the boxes line up across sections
 
 
+LOG_ROTATE_BYTES = 1024 * 1024     # the same 1 MB the scheduled task's wrapper rolls over at
+
+
+def _rotate_log(log: Path) -> None:
+    """Past 1 MB, keep the log as sync.log.1 (replacing the older one) and start a new one.
+    A failure (a sync is writing to it right now) leaves it for next time."""
+    try:
+        if log.stat().st_size > LOG_ROTATE_BYTES:
+            os.replace(log, log.with_name(log.name + ".1"))
+    except OSError:
+        pass
+
+
 def configure_gui_logging() -> None:
     """Log to ~/.homevitals/sync.log only. pythonw has no console to log to."""
     shared.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    # The scheduled task rolls the log over before each run, but it cannot while
+    # this window holds the file open, and the window can stay open for weeks.
+    _rotate_log(shared.LOG_FILE)
     handler = logging.FileHandler(shared.LOG_FILE, encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     root = logging.getLogger()

@@ -17,17 +17,64 @@ import json
 import logging
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
-from garminconnect import Garmin, GarminConnectAuthenticationError
+from garminconnect import Garmin, GarminConnectAuthenticationError, GarminConnectTooManyRequestsError
 
 from homevitals.install import browser_install_command
 from homevitals.network import is_transient_network_error
 from homevitals.prompt import PROMPT_TIMEOUT_SECONDS, input_with_timeout
 
 logger = logging.getLogger(__name__)
+
+
+class LoginGuard:
+    """What one run has learned about logging in to Garmin.
+
+    Weight and blood pressure each open their own Garmin connection, and a
+    household has more than one account. With a dead session that was a login
+    per step and per person, and each library login tries up to five methods.
+    A failed login is not retried within the run: a wrong password, an MFA
+    request or a block does not clear in seconds, and every attempt counts
+    against the connection. A 429 is about the connection, which everyone in
+    the house shares, so after one nobody logs in for the rest of the run. A
+    passing network failure is not remembered: the run's own network retry
+    must still get its turn.
+    """
+
+    def __init__(self) -> None:
+        self.failed: dict[str, BaseException] = {}    # by email, lower case
+        self.blocked: BaseException | None = None     # the first 429
+
+
+_guard: LoginGuard | None = None
+
+
+@contextmanager
+def login_guard() -> Iterator[LoginGuard]:
+    """Remember failed Garmin logins until the block ends. Nested blocks share the outer one."""
+    global _guard
+    outer = _guard
+    _guard = outer or LoginGuard()
+    try:
+        yield _guard
+    finally:
+        _guard = outer
+
+
+def _rate_limited(exc: BaseException) -> bool:
+    """A 429, also when a later step (the browser fallback) has wrapped it."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        if isinstance(current, GarminConnectTooManyRequestsError):
+            return True
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return False
 
 # Garmin OAuth2 / SSO endpoints (public app identifiers, not per-user secrets)
 DI_TOKEN_URL = "https://diauth.garmin.com/di-oauth2-service/oauth/token"
@@ -311,9 +358,9 @@ class GarminAuth:
                 logger.warning("Saved Garmin token unusable (%s); re-logging in", e)
 
         if interactive:
-            self._fresh_login(garmin)
+            self._guarded(lambda: self._fresh_login(garmin))
         else:
-            self._silent_login(garmin)
+            self._guarded(lambda: self._silent_login(garmin))
         self._save_token(garmin)
         logger.info("Authenticated to Garmin as %s", self.email)
         return garmin
@@ -326,7 +373,7 @@ class GarminAuth:
         password, a passing Garmin or Cloudflare error) leaves the old token
         where it was, since that session may still be good. (eufy-sync 1.14.)"""
         garmin = Garmin(self.email, self.password, prompt_mfa=_mfa_prompt)
-        self._fresh_login(garmin)
+        self._guarded(lambda: self._fresh_login(garmin))
         self._save_token(garmin)
         logger.info("Re-authenticated to Garmin as %s", self.email)
         return garmin
@@ -340,10 +387,30 @@ class GarminAuth:
         that only looked like a dead session would otherwise cost an MFA user
         a working session and force them to connect Garmin again."""
         garmin = Garmin(self.email, self.password, prompt_mfa=_headless_mfa_prompt)
-        self._silent_login(garmin)
+        self._guarded(lambda: self._silent_login(garmin))
         self._save_token(garmin)
         logger.info("Re-authenticated to Garmin as %s without prompting", self.email)
         return garmin
+
+    def _guarded(self, log_in: Callable[[], None]) -> None:
+        """Run log_in unless this run already knows how it ends (see LoginGuard)."""
+        guard = _guard
+        if guard is None:
+            log_in()
+            return
+        earlier = guard.blocked or guard.failed.get(self.email.lower())
+        if earlier is not None:
+            reason = "Garmin is refusing logins from this connection" if guard.blocked else "it failed earlier in this run"
+            logger.info("Not logging in to Garmin as %s again: %s", self.email, reason)
+            raise earlier
+        try:
+            log_in()
+        except Exception as e:
+            if _rate_limited(e):
+                guard.blocked = e
+            elif not is_transient_network_error(str(e)):
+                guard.failed[self.email.lower()] = e
+            raise
 
     def _fresh_login(self, garmin: Garmin) -> None:
         """Try the browser-free login; fall back to the browser on any failure.

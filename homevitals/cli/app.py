@@ -115,7 +115,32 @@ def _sync_with_network_retry(user, state, **kwargs):
         sleep(NETWORK_RETRY_DELAY)
 
 
+def _log_file_from_argv(argv: list[str]) -> Path | None:
+    """The --log-file path, read before argparse so the earliest output lands in it too."""
+    for i, arg in enumerate(argv):
+        if arg == "--log-file" and i + 1 < len(argv):
+            return Path(argv[i + 1])
+        if arg.startswith("--log-file="):
+            return Path(arg.split("=", 1)[1])
+    return None
+
+
+def _send_output_to(path: Path) -> None:
+    """Append everything this run prints, warnings and tracebacks included, to path.
+
+    The Windows scheduled task uses this instead of cmd's `>>`: cmd cannot open
+    the log while the HomeVitals window has it open, and quit before the sync
+    started. Python's own file handles share the file with the window's.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    stream = open(path, "a", encoding="utf-8", errors="replace", buffering=1)
+    sys.stdout = sys.stderr = stream
+
+
 def main() -> None:
+    log_file = _log_file_from_argv(sys.argv[1:])
+    if log_file is not None:
+        _send_output_to(log_file)
     try:
         _main()
     except KeyboardInterrupt:
@@ -173,6 +198,8 @@ def _main() -> None:
     parser.add_argument("--use-keychain", action="store_true", help="Move credentials back into the system keychain")
     parser.add_argument("--config", type=Path, default=None, help="Config path (default: ~/.homevitals/config.yaml)")
     parser.add_argument("--db", type=Path, default=None, help="Database path (default: ~/.homevitals/state.db)")
+    # For the Windows scheduled task: main() has already sent the output there.
+    parser.add_argument("--log-file", type=Path, default=None, help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     # Both set the fetch window, from opposite intents (fill in what is
@@ -193,9 +220,11 @@ def _main() -> None:
     # Handle doctor - must report even on a fresh install, never launch the
     # first-run wizard, and never traceback.
     if args.doctor:
+        from homevitals import garmin_auth
         from homevitals.cli import lock
-        # Live checks can refresh tokens, so they share the sync lock.
-        with lock.single_instance(require_lock=True) as acquired:
+        # Live checks can refresh tokens, so they share the sync lock. They log in
+        # as everyone, so they get the sync run's login guard too.
+        with lock.single_instance(require_lock=True) as acquired, garmin_auth.login_guard():
             if not acquired:
                 print("Another sync or diagnostic is running. Retry --doctor when it finishes.")
                 sys.exit(1)
@@ -366,6 +395,7 @@ def _main() -> None:
         return
 
     # Run sync
+    from homevitals import garmin_auth
     from homevitals.cli import lock
     from homevitals.eufy_client import AmbiguousProfileError
     from homevitals.state import SyncState
@@ -377,7 +407,8 @@ def _main() -> None:
     # the loser saving a token the rotation already killed. An overlap is a
     # normal event, not a failure, so the skipped run exits 0 - a non-zero
     # exit here would fire the failure toast every time the two met.
-    with lock.single_instance() as acquired:
+    # One run, one try per Garmin account, and none after a 429 (garmin_auth.LoginGuard).
+    with lock.single_instance() as acquired, garmin_auth.login_guard():
         if not acquired:
             print("Another homevitals run is in progress; skipping.")
             return

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.5
+
+- Windows: automatic sync works again while the HomeVitals window is open. The scheduled task wrote its output through a Windows command line that can't open the log while the window has it open, so every scheduled run stopped before it started, without a line in the log, for as long as the window sat in the tray. HomeVitals now writes to the log itself. Existing installs are updated the next time the window starts.
+- The window rolls the log over at 1 MB when it starts, since the scheduled task can't while the window is open.
+- Fewer Garmin logins. Within one sync (or one Fix problems check), a Garmin login that failed isn't tried again for the same account, so weight and blood pressure no longer each try their own. After a "too many requests" (429) answer, nobody in the household logs in again in that sync: Garmin blocks the internet connection, which everyone shares, and each extra try can extend the block. A passing network failure is still retried. Logging in from Connect, `--reauth` or setup is unchanged.
+- Updated the GitHub Actions used for tests and releases (checkout and setup-python v7).
+
 ## 1.0.4
 
 More reliability fixes from [eufy-sync](https://github.com/sturimcode/eufy-sync) 1.14 and 1.15.

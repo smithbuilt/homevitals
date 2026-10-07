@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -73,6 +74,35 @@ def test_main_ctrl_c_exits_cleanly(capsys):
             app.main()
     assert exc_info.value.code == 130
     assert "Cancelled" in capsys.readouterr().out
+
+
+def test_log_file_is_read_before_argparse():
+    from homevitals.cli import app
+    assert app._log_file_from_argv(["--headless", "--log-file", "C:/x/sync.log"]) == Path("C:/x/sync.log")
+    assert app._log_file_from_argv(["--log-file=C:/x/sync.log"]) == Path("C:/x/sync.log")
+    assert app._log_file_from_argv(["--headless"]) is None
+    assert app._log_file_from_argv(["--log-file"]) is None   # argparse reports the missing value
+
+
+def test_log_file_appends_the_runs_output_while_another_process_has_it_open(monkeypatch, tmp_path: Path):
+    """The Windows scheduled task's run: the window keeps sync.log open, and the run
+    must still add its lines (cmd's >> could not, and the run never started)."""
+    import logging
+
+    from homevitals.cli import app
+    log = tmp_path / "sync.log"
+    window = logging.FileHandler(log, encoding="utf-8")
+    window.setFormatter(logging.Formatter("%(message)s"))
+    window.emit(logging.LogRecord("gui", logging.INFO, "", 0, "window line", None, None))
+    monkeypatch.setattr(sys, "stdout", sys.stdout)
+    monkeypatch.setattr(sys, "stderr", sys.stderr)
+    with patch.object(app, "_main", side_effect=lambda: print("scheduled run line")):
+        monkeypatch.setattr(sys, "argv", ["homevitals", "--headless", "--log-file", str(log)])
+        app.main()
+    stream = sys.stdout
+    stream.close()
+    window.close()
+    assert log.read_text(encoding="utf-8").splitlines() == ["window line", "scheduled run line"]
 
 
 def test_update_password_path_configures_logging(monkeypatch, tmp_path: Path):

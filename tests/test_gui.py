@@ -899,3 +899,23 @@ def test_main_window_says_which_other_apps_need_no_setup(root, tmp_path):
     # Only what the services' own pages confirm: Runalyze is the one that gets blood pressure.
     assert "Runalyze gets weight and blood pressure" in note
     assert "not weight or blood pressure" in note
+
+
+def test_window_rolls_a_large_log_over_when_it_starts(tmp_path):
+    """The scheduled task cannot roll sync.log over while the window holds it open,
+    and the window can stay open for weeks, so the window does it as it starts."""
+    log = tmp_path / "sync.log"
+    (tmp_path / "sync.log.1").write_text("oldest", encoding="utf-8")
+    log.write_bytes(b"x" * (gui.LOG_ROTATE_BYTES + 1))
+    gui._rotate_log(log)
+    assert not log.exists()
+    assert (tmp_path / "sync.log.1").stat().st_size == gui.LOG_ROTATE_BYTES + 1
+
+
+def test_window_leaves_a_small_or_missing_log_alone(tmp_path):
+    log = tmp_path / "sync.log"
+    gui._rotate_log(log)                     # missing: nothing to do, no error
+    log.write_text("short", encoding="utf-8")
+    gui._rotate_log(log)
+    assert log.read_text(encoding="utf-8") == "short"
+    assert not (tmp_path / "sync.log.1").exists()

@@ -53,12 +53,16 @@ def _wrapper_content(binary_path: str) -> str:
     """Build the VBScript that runs the sync with no visible console.
 
     WScript.Shell.Run takes one command string and a window style; style 0
-    hides the window. The command is a `cmd /c` line so its stdout and stderr
-    can be appended to the log with `>>`. VBScript has no backslash escaping:
-    a literal double quote inside a string is written as two double quotes.
-    The inner command already contains quotes (around the binary path and the
-    log path), so every one of them is doubled before it is embedded in the
-    Run string literal.
+    hides the window. homevitals is started directly and appends its own output
+    to the log (--log-file). It used to be a `cmd /c ... >> sync.log` line, but
+    cmd opens the log in a sharing mode that fails while another process has it
+    open, and the HomeVitals window keeps it open for as long as it runs: cmd
+    then quit with 1 before homevitals started, and every scheduled run was lost
+    without a line in the log. Python opens the file in a mode both can share.
+    VBScript has no backslash escaping: a literal double quote inside a string
+    is written as two double quotes. The command contains quotes (around the
+    binary path and the log path), so every one of them is doubled before it is
+    embedded in the Run string literal.
 
     Run is called with bWaitOnReturn True and its return value goes straight to
     WScript.Quit, so wscript exits with the sync's own exit code. Launched
@@ -66,13 +70,13 @@ def _wrapper_content(binary_path: str) -> str:
     Task Scheduler's LastTaskResult reads 0 forever, whatever the sync did -
     which is how 24 days of failing runs went unnoticed on a real install.
 
-    Rotation belongs here, ahead of the launch, and not in Python: this is the
-    only moment when nothing holds the log open. Once the run starts, cmd's
-    `>>` keeps a handle on the file in a sharing mode that refuses the rename.
+    Rotation belongs here, ahead of the launch: once the run starts, its own
+    handle on the file refuses the rename. While the window is open its handle
+    refuses it too; the window rolls the log over itself when it starts.
     """
     log = str(shared.LOG_FILE)
     rotated = f"{log}.1"
-    inner = f'cmd /c ""{binary_path}" --headless >> "{log}" 2>&1"'
+    inner = f'"{binary_path}" --headless --log-file "{log}"'
     escaped = inner.replace('"', '""')
     # The rotation block spells the paths out as standalone VBScript string
     # literals, so the same doubling rule applies to them. A Windows filename

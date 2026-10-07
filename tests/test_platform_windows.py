@@ -68,16 +68,26 @@ def test_install_writes_wrapper_with_doubled_quote_escaping(data_dir):
     # Full fidelity against the module's own generator.
     assert content == windows._wrapper_content(binary)
 
-    # VBScript escapes a literal quote by doubling it. The original inner command
-    # opens with `cmd /c ""` and wraps the binary path in a quote, so after
-    # doubling every quote the leading marker becomes four quotes and the path is
-    # bracketed by four quotes on the left and two on the right. A wrong quote
-    # level here silently breaks the hidden-window run, so pin the exact bytes.
+    # VBScript escapes a literal quote by doubling it. The inner command wraps the
+    # binary path and the log path in quotes, so after doubling the Run literal
+    # opens with three quotes (its own plus a doubled one) and each path is
+    # bracketed by doubled quotes. A wrong quote level here silently breaks the
+    # hidden-window run, so pin the exact bytes.
+    log = str(data_dir / "sync.log")
     assert content.startswith('Set shell = CreateObject("WScript.Shell")\r\n')
-    assert 'shell.Run("cmd /c """"' in content
-    assert f'""""{binary}""' in content
-    assert ', 0, True)\r\n' in content
+    assert f'shell.Run("""{binary}"" --headless --log-file ""{log}""", 0, True)\r\n' in content
     assert content.endswith('WScript.Quit code\r\n')
+
+
+def test_wrapper_lets_homevitals_write_the_log_itself(data_dir):
+    """cmd's `>>` cannot open sync.log while the HomeVitals window has it open,
+    and quit with 1 before homevitals started: every scheduled run was lost while
+    the window sat in the tray. homevitals appends to the log itself instead."""
+    content = windows._wrapper_content("C:\\Tools\\homevitals.exe")
+
+    assert "cmd /c" not in content
+    assert ">>" not in content
+    assert "--log-file" in content
 
 
 def test_wrapper_waits_and_exits_with_the_sync_exit_code(data_dir):

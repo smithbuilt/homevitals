@@ -649,3 +649,115 @@ def test_force_reauth_routes_mfa_through_override(monkeypatch):
     monkeypatch.setattr("homevitals.garmin_auth.Garmin", fake_garmin)
     auth.force_reauth()
     assert seen["code"] == "111222"
+
+
+# -- one sync run's memory of failed logins (LoginGuard) ----------------------
+
+def _headless_auth(email, monkeypatch, login_error):
+    """A GarminAuth with no saved session whose library login fails with login_error."""
+    auth = GarminAuth(email, "pw")
+    monkeypatch.setattr(auth, "_load_token", lambda: None)
+    monkeypatch.setattr(auth, "_save_token", lambda g: None)
+    fake = MagicMock()
+    fake.login.side_effect = login_error
+    return auth, fake
+
+
+def test_a_failed_login_is_not_tried_again_for_the_same_account_in_one_run(monkeypatch):
+    """Weight and blood pressure each open a Garmin connection. With a dead session
+    the second used to log in again and fail the same way."""
+    from garminconnect import GarminConnectConnectionError
+
+    from homevitals.garmin_auth import login_guard
+    error = GarminConnectConnectionError("All login strategies exhausted")
+    first, fake = _headless_auth("a@example.com", monkeypatch, error)
+    second, _ = _headless_auth("A@example.com", monkeypatch, error)
+    with login_guard(), patch("homevitals.garmin_auth.Garmin", return_value=fake):
+        with pytest.raises(GarminConnectConnectionError):
+            first.login(interactive=False)
+        with pytest.raises(GarminConnectConnectionError) as again:
+            second.login(interactive=False)
+    assert fake.login.call_count == 1
+    assert again.value is error
+
+
+def test_another_account_still_logs_in_after_a_wrong_password(monkeypatch):
+    from garminconnect import GarminConnectAuthenticationError
+
+    from homevitals.garmin_auth import login_guard
+    first, fake = _headless_auth("a@example.com", monkeypatch, GarminConnectAuthenticationError("bad"))
+    second, _ = _headless_auth("b@example.com", monkeypatch, None)
+    with login_guard(), patch("homevitals.garmin_auth.Garmin", return_value=fake):
+        with pytest.raises(PermanentSyncError):
+            first.login(interactive=False)
+        fake.login.side_effect = None
+        second.login(interactive=False)
+    assert fake.login.call_count == 2
+
+
+def test_after_a_429_nobody_logs_in_for_the_rest_of_the_run(monkeypatch):
+    """A 429 is about the internet connection, which the household shares."""
+    from garminconnect import GarminConnectTooManyRequestsError
+
+    from homevitals.garmin_auth import login_guard
+    error = GarminConnectTooManyRequestsError("All login strategies rate limited (429)")
+    first, fake = _headless_auth("a@example.com", monkeypatch, error)
+    second, _ = _headless_auth("b@example.com", monkeypatch, error)
+    with login_guard(), patch("homevitals.garmin_auth.Garmin", return_value=fake):
+        with pytest.raises(GarminConnectTooManyRequestsError):
+            first.login(interactive=False)
+        with pytest.raises(GarminConnectTooManyRequestsError):
+            second.silent_reauth()
+    assert fake.login.call_count == 1
+
+
+def test_a_429_wrapped_by_the_browser_fallback_still_blocks_the_run(monkeypatch):
+    from garminconnect import GarminConnectTooManyRequestsError
+
+    from homevitals.garmin_auth import login_guard
+    auth, fake = _headless_auth("a@example.com", monkeypatch, None)
+    wrapped = PermanentSyncError("Garmin login failed")
+    wrapped.__cause__ = GarminConnectTooManyRequestsError("429")
+    other, _ = _headless_auth("b@example.com", monkeypatch, None)
+    with login_guard() as guard, patch("homevitals.garmin_auth.Garmin", return_value=fake):
+        monkeypatch.setattr(auth, "_fresh_login", MagicMock(side_effect=wrapped))
+        with pytest.raises(PermanentSyncError):
+            auth.force_reauth()
+        assert guard.blocked is wrapped
+        with pytest.raises(PermanentSyncError):
+            other.login(interactive=False)
+    fake.login.assert_not_called()
+
+
+def test_a_network_failure_is_not_remembered(monkeypatch):
+    """The run's own network retry must still get its turn."""
+    from homevitals.garmin_auth import login_guard
+    error = ConnectionError("Max retries exceeded: connection timed out")
+    auth, fake = _headless_auth("a@example.com", monkeypatch, error)
+    with login_guard() as guard, patch("homevitals.garmin_auth.Garmin", return_value=fake):
+        with pytest.raises(ConnectionError):
+            auth.login(interactive=False)
+        with pytest.raises(ConnectionError):
+            auth.login(interactive=False)
+    assert fake.login.call_count == 2
+    assert guard.failed == {} and guard.blocked is None
+
+
+def test_without_a_run_every_login_is_tried(monkeypatch):
+    """--reauth, setup and the window's Connect button each try for real."""
+    from garminconnect import GarminConnectTooManyRequestsError
+    auth, fake = _headless_auth("a@example.com", monkeypatch, GarminConnectTooManyRequestsError("429"))
+    with patch("homevitals.garmin_auth.Garmin", return_value=fake):
+        for _ in range(2):
+            with pytest.raises(GarminConnectTooManyRequestsError):
+                auth.login(interactive=False)
+    assert fake.login.call_count == 2
+
+
+def test_the_guard_ends_with_its_block():
+    from homevitals import garmin_auth
+    with garmin_auth.login_guard() as outer:
+        with garmin_auth.login_guard() as inner:
+            assert inner is outer
+        assert garmin_auth._guard is outer
+    assert garmin_auth._guard is None
