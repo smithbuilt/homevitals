@@ -6,8 +6,11 @@ import sys
 from pathlib import Path
 from time import sleep
 
+# Nothing imported here may load garminconnect or curl_cffi (doctor does, so
+# it is imported where it runs). --update has to work when either is broken,
+# since updating is how a broken install gets fixed.
 from homevitals import platform_support
-from homevitals.cli import doctor, maintenance, profiles, setup, shared, status, updater
+from homevitals.cli import maintenance, profiles, setup, shared, status, updater
 from homevitals.config import bp_ready, missing_for_sync, nothing_connected, scale_ready
 from homevitals.reporting import SyncReport, blood_pressure_note, garmin_existing_note, update_counts_summary
 
@@ -221,7 +224,7 @@ def _main() -> None:
     # first-run wizard, and never traceback.
     if args.doctor:
         from homevitals import garmin_auth
-        from homevitals.cli import lock
+        from homevitals.cli import doctor, lock
         # Live checks can refresh tokens, so they share the sync lock. They log in
         # as everyone, so they get the sync run's login guard too.
         with lock.single_instance(require_lock=True) as acquired, garmin_auth.login_guard():

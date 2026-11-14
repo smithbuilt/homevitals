@@ -40,6 +40,14 @@ def transform(measurement: EufyMeasurement) -> GarminBodyComposition | None:
     if not MIN_WEIGHT_KG <= measurement.weight_kg <= MAX_WEIGHT_KG:
         return None
 
+    # Garmin does not store a BMI for uploaded weigh-ins (Garmin Connect shows
+    # one worked out on screen from the profile height, but the entry's own
+    # field stays empty for anything else that reads it). So send the figure
+    # Eufy calculated, as eufy-sync 1.15.3 does: left out when implausible,
+    # and rounded to the FIT field's 0.1 resolution because the encoder
+    # truncates rather than rounds.
+    bmi = _clamp_or_none(measurement.bmi, 10.0, 70.0)
+
     return GarminBodyComposition(
         # garminconnect's add_body_composition encodes the FIT timestamp with
         # mktime(timetuple()), which reads the wall-clock fields as LOCAL
@@ -55,5 +63,5 @@ def transform(measurement: EufyMeasurement) -> GarminBodyComposition | None:
         muscle_mass=_clamp_or_none(measurement.muscle_mass_kg, 10.0, 120.0),
         basal_met=_clamp_or_none(measurement.bmr_kcal, 500, 5000),
         metabolic_age=_clamp_or_none(measurement.metabolic_age, 10, 120),
-        bmi=None,  # Let Garmin calculate from weight + height
+        bmi=round(bmi, 1) if bmi is not None else None,
     )

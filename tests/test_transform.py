@@ -36,7 +36,8 @@ def test_basic_transform():
     assert result.muscle_mass == 45.2
     assert result.basal_met == 1650
     assert result.metabolic_age == 28
-    assert result.bmi is None  # We skip BMI, let Garmin calculate
+    # Garmin stores no BMI for uploads by itself, so Eufy's figure is sent.
+    assert result.bmi == 23.1
 
 
 def test_timestamp_is_iso():
@@ -100,3 +101,27 @@ def test_transform_drops_implausible_bmr():
     result = transform(m)
     assert result is not None
     assert result.basal_met is None
+
+
+def test_transform_rounds_bmi_to_the_fit_resolution():
+    """The FIT encoder multiplies BMI by 10 and truncates, so an unrounded
+    26.66 would arrive as 26.6. Rounding first stores the nearest tenth.
+    (From eufy-sync 1.15.3.)"""
+    result = transform(_make_measurement(bmi=26.66))
+    assert result is not None
+    assert result.bmi == 26.7
+
+
+def test_transform_leaves_out_an_implausible_bmi():
+    """Never adjusted to fit: the weigh-in goes up without a BMI."""
+    for bad in (0, 4.2, 95.0):
+        result = transform(_make_measurement(bmi=bad))
+        assert result is not None
+        assert result.bmi is None
+
+
+def test_transform_sends_no_bmi_when_eufy_gave_none():
+    """A weigh-in straight from the scale over Wi-Fi carries the weight alone."""
+    result = transform(_make_measurement(bmi=None, body_fat_pct=None))
+    assert result is not None
+    assert result.bmi is None

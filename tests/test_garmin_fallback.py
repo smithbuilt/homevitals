@@ -148,7 +148,7 @@ CF_PAGE = (
 CF_MITIGATED = (403, {"Content-Type": "text/html", "cf-mitigated": "challenge"}, b"<html></html>")
 
 
-# Issue #444's block: the same JSON a refused token gets, behind the same
+# A network block (or a ~/.netrc entry replacing the token): the same JSON a refused token gets, behind the same
 # Cloudflare headers every API answer carries.
 JSON_403 = (
     403,
@@ -268,7 +268,7 @@ def test_cloudflare_page_on_upload_retries_through_curl_cffi_without_relogin():
 
 
 def test_json_403_on_a_read_tries_the_fingerprint_before_any_relogin():
-    # Issue #444: the block is a JSON 403. The fingerprint retry is one
+    # A blocked network answers with a JSON 403. The fingerprint retry is one
     # request; a relogin is a login, a 429 risk, and on that network its own
     # token check fails the same way.
     garmin, _ = _real_garmin([JSON_403])

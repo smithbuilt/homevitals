@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.6
+
+Updates from [eufy-sync](https://github.com/sturimcode/eufy-sync) 1.15.1 to 1.15.3.
+
+- Fewer "too many requests" blocks when logging in to Garmin. HomeVitals now needs version 0.3.20 or later of the Garmin library it uses. That version restores a login method Garmin had refused with a 429 on every try since April, and it treats Garmin's new 427 answer as the rate limit it is, so HomeVitals stops and waits instead of trying again.
+- Needs curl_cffi 0.17 or later, which drops a compromised certificate from its trusted list.
+- `homevitals --version`, `--status`, `--update` and the other commands that don't talk to Garmin no longer load the Garmin libraries, so they start faster and still work if one of those libraries is broken.
+- A sync with no internet connection is logged as "Could not reach ..." instead of "Authentication failed", which pointed at the wrong fix.
+- Strava: a 403 answer is now explained (the account that owns the Strava API app most likely has no active subscription) instead of telling you to sign in again, which can't fix it.
+- Python 3.15 is supported and tested.
+- The README explains why a weigh-in with socks on arrives as weight only, where the BMI comes from, and why Garmin Connect's website can show a huge "metabolic age" (a display fault on Garmin's page; the data is correct).
+- BMI now goes to Garmin with a weigh-in, from [eufy-sync](https://github.com/sturimcode/eufy-sync) 1.15.3. Garmin Connect shows a BMI it works out on screen from your height, but it stores none for an uploaded weigh-in, so other apps reading your Garmin data saw a blank. HomeVitals now sends the BMI the Eufy scale app calculated. A BMI outside 10 to 70 is left out, never adjusted. This applies to new weigh-ins that arrive with their full record; a weigh-in that reaches Eufy with the weight alone (for example with socks on, before the EufyLife app has picked it up) has no BMI to send. Earlier entries stay as they are.
+
 ## 1.0.5
 
 - Windows: automatic sync works again while the HomeVitals window is open. The scheduled task wrote its output through a Windows command line that can't open the log while the window has it open, so every scheduled run stopped before it started, without a line in the log, for as long as the window sat in the tray. HomeVitals now writes to the log itself. Existing installs are updated the next time the window starts.

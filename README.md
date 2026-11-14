@@ -62,6 +62,12 @@ Then click **Sync now**, and tick **Automatic sync (every 4 hours)**. While a sy
 
 **Older readings.** The first sync brings in the last 7 days of weigh-ins and 30 days of blood pressure. To bring in more blood pressure history (up to 10 years, or what the monitor and app hold), open the person and click **Bring in older readings**. Nothing is ever uploaded twice: HomeVitals remembers what it sent and checks what Garmin already has.
 
+**Body fat and the other body measurements need bare feet.** The scale reads them through the soles of your feet. With socks or shoes on it records the weight alone, and that is all HomeVitals can pass on. A weigh-in can also reach Garmin as weight only at first and be completed later, once the Eufy app has picked up its full record (HomeVitals looks back 14 days for these).
+
+**BMI.** HomeVitals sends the BMI the Eufy app calculated, when a weigh-in comes with its full record. Garmin Connect also shows a BMI of its own, worked out from the height in your Garmin profile.
+
+**A huge "metabolic age" on Garmin Connect's website.** HomeVitals sends whole years. Garmin stores the value in milliseconds, and its web weight page shows that without converting it back. The data is correct and nothing needs repairing.
+
 **Numbers are never changed.** Readings go to Garmin exactly as measured. One that Garmin won't accept is skipped and reported, never rounded.
 
 ## Runalyze, intervals.icu, TrainingPeaks and Strava

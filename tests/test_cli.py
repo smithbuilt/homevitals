@@ -2613,3 +2613,26 @@ def test_progress_markers_report_failures(tmp_path, fixtures, capsys, monkeypatc
                  bp=lambda user: _bp(error="Garmin upload failed"))
     assert _markers(capsys.readouterr().out) == [("Chris", "scale", "start"), ("Chris", "scale", "failed"),
                                                  ("Chris", "bp", "start"), ("Chris", "bp", "failed")]
+
+
+def test_the_command_line_starts_without_garminconnect_or_curl_cffi():
+    """--version, --status and --update must work on a machine where either
+    library fails to load, so nothing the command line imports at start may pull
+    them in. A fresh interpreter, because this test run has long since imported
+    both. (From eufy-sync 1.15.1.)"""
+    import subprocess
+    code = (
+        "import sys, homevitals, homevitals.cli.app; "
+        "print(sorted(n for n in ('garminconnect', 'curl_cffi') if n in sys.modules))"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "[]"
+
+
+def test_garmin_auth_is_still_reachable_from_the_package():
+    import homevitals
+    from homevitals.garmin_auth import GarminAuth
+    assert homevitals.GarminAuth is GarminAuth
+    with pytest.raises(AttributeError):
+        _ = homevitals.no_such_name

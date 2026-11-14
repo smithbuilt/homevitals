@@ -39,7 +39,7 @@ BP_TARGET = state_module.BP_TARGET
 FIRST_SYNC_BACKFILL_DAYS = 30
 REFETCH_OVERLAP_DAYS = 7
 GARMIN_SAME_TIME_TOLERANCE_SECONDS = 2
-# Mirrors garminconnect 0.3.17 set_blood_pressure's own range checks.
+# Mirrors garminconnect's own set_blood_pressure range checks (the same in 0.3.17 and 0.3.20).
 GARMIN_BP_LIMITS = {"systolic": (70, 260), "diastolic": (40, 150), "pulse": (20, 250)}
 NOTES_DEVICE = "Omron M7"
 SKIPPED_OUT_OF_RANGE_RESPONSE = '{"skipped": "outside_garmin_range"}'

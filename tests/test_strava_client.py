@@ -3,6 +3,8 @@ from __future__ import annotations
 import time
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from homevitals.config import StravaConfig
 from homevitals.strava_client import StravaClient
 
@@ -235,3 +237,59 @@ def test_auth_url_encodes_every_query_value():
     assert query["scope"] == ["profile:write,profile:read_all"]
     assert query["state"] == ["st@te/value"]
     assert query["approval_prompt"] == ["force"]
+
+
+def _strava_answer(status: int) -> MagicMock:
+    response = MagicMock()
+    response.status_code = status
+    response.text = ""
+    return response
+
+
+@patch("homevitals.strava_client._save_tokens")
+@patch("homevitals.strava_client._load_tokens")
+def test_check_connection_401_asks_for_a_new_sign_in(mock_load, mock_save):
+    from homevitals.sync import PermanentSyncError
+    mock_load.return_value = _make_tokens()
+    client = StravaClient(_make_config())
+    client.authenticate()
+    with patch.object(client._client, "get", return_value=_strava_answer(401)):
+        with pytest.raises(PermanentSyncError, match="--setup-strava"):
+            client.check_connection()
+    client.close()
+
+
+@patch("homevitals.strava_client._save_tokens")
+@patch("homevitals.strava_client._load_tokens")
+def test_check_connection_403_points_at_the_subscription_not_a_sign_in(mock_load, mock_save):
+    # doctor offers any --setup-strava it finds in the message as the fix, and
+    # signing in again cannot unblock an app whose owner has no subscription.
+    from homevitals.sync import PermanentSyncError
+    mock_load.return_value = _make_tokens()
+    client = StravaClient(_make_config())
+    client.authenticate()
+    with patch.object(client._client, "get", return_value=_strava_answer(403)):
+        with pytest.raises(PermanentSyncError) as excinfo:
+            client.check_connection()
+    message = str(excinfo.value)
+    assert "HTTP 403" in message
+    assert "subscription" in message
+    assert "--setup-strava" not in message
+    client.close()
+
+
+@patch("homevitals.strava_client._save_tokens")
+@patch("homevitals.strava_client._load_tokens")
+def test_update_weight_403_names_both_causes(mock_load, mock_save):
+    from homevitals.sync import PermanentSyncError
+    mock_load.return_value = _make_tokens()
+    client = StravaClient(_make_config())
+    client.authenticate()
+    with patch.object(client._client, "put", return_value=_strava_answer(403)):
+        with pytest.raises(PermanentSyncError) as excinfo:
+            client.update_weight(86.2)
+    message = str(excinfo.value)
+    assert message.startswith("Failed to update Strava weight (HTTP 403).")
+    assert "subscription" in message
+    assert "homevitals --setup-strava" in message
+    client.close()
