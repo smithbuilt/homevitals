@@ -72,3 +72,9 @@ def migrate_agent() -> bool:
     """Move automatic sync registered under the app's old name to the new one (Windows only)."""
     migrate = getattr(_impl(), "migrate_agent", None)
     return bool(migrate()) if migrate is not None else False
+
+
+def missing_agent_command() -> str | None:
+    """The program automatic sync starts, when it is gone from disk (Windows only)."""
+    check = getattr(_impl(), "missing_agent_command", None)
+    return check() if check is not None else None

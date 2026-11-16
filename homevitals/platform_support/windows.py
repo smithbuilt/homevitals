@@ -18,6 +18,7 @@ from __future__ import annotations
 import base64
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -143,6 +144,31 @@ def _binary() -> str | None:
     return os.path.abspath(found) if found else None
 
 
+# The program path as the wrapper spells it: inside doubled quotes, right before --headless.
+# The same holds for the older `cmd /c` wrappers.
+_WRAPPER_COMMAND = re.compile(r'""([^"\r\n]+)"" --headless')
+
+MISSING_COMMAND_FIX = "quit the HomeVitals window, then run: uv tool install homevitals --force"
+
+
+def missing_agent_command() -> str | None:
+    """The program automatic sync starts, when that program is gone. None when all is well.
+
+    Updating HomeVitals while its window is open does this: the installer removes
+    homevitals.exe, cannot replace the launcher the window is running from, and
+    stops there. The task then fails every four hours without a line in the log,
+    because the wrapper has nothing to start. A command still found on PATH is not
+    this case: repair_agent() points the task at it.
+    """
+    wrapper_path = shared.DATA_DIR / WRAPPER_NAME
+    if not wrapper_path.exists() or _binary():
+        return None
+    found = _WRAPPER_COMMAND.search(wrapper_path.read_bytes().decode("utf-8", errors="replace"))
+    if found is None or os.path.isfile(found.group(1)):
+        return None
+    return found.group(1)
+
+
 def _install_scheduled_task() -> None:
     """Register the per-user scheduled task for automatic sync."""
     binary = _binary()
@@ -251,9 +277,10 @@ def _offer_scheduled_task() -> None:
 def agent_status() -> dict | None:
     """Report the scheduled task's health for --doctor.
 
-    Three states: the wrapper missing or the task query failing means it is not
+    Four states: the wrapper missing or the task query failing means it is not
     installed; the wrapper present but out of date with the current binary means
-    an outdated registration; both good means it is installed and scheduled.
+    an outdated registration; the program it starts gone from disk means every
+    run fails; all good means it is installed and scheduled.
     """
     try:
         wrapper_path = shared.DATA_DIR / WRAPPER_NAME
@@ -270,6 +297,10 @@ def agent_status() -> dict | None:
         binary = _binary()
         if binary and wrapper_path.read_bytes() != _wrapper_content(binary).encode("utf-8"):
             return {"status": "WARN", "label": "scheduled task", "detail": "outdated registration", "fix": "homevitals --install-agent"}
+
+        missing = missing_agent_command()
+        if missing:
+            return {"status": "FAIL", "label": "scheduled task", "detail": f"its program is missing ({missing})", "fix": MISSING_COMMAND_FIX}
 
         return {"status": "PASS", "label": "scheduled task", "detail": "installed, runs every 4h", "fix": None}
     except Exception as e:

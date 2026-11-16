@@ -38,7 +38,15 @@ homevitals-gui
 
 The window opens. Click **Add desktop shortcut** to open it from the desktop from then on.
 
-Update later with `uv tool upgrade homevitals`. HomeVitals never updates itself.
+HomeVitals never updates itself. To update it:
+
+1. Quit HomeVitals: right-click its icon by the clock and choose **Quit**. Closing the window is not enough.
+2. Run `uv tool upgrade homevitals`.
+3. Open HomeVitals again.
+
+Updating while HomeVitals is still running can leave the `homevitals` command missing, and automatic sync then stops. The window tells you when that has happened. To repair it, quit HomeVitals and run `uv tool install homevitals --force`.
+
+After a reinstall, Windows can tuck the HomeVitals icon behind the **^** arrow by the clock. It is still running; drag the icon back out next to the clock.
 
 ## Setting up your household
 

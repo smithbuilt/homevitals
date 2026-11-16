@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.7
+
+- The window now says so when automatic sync can't run because the `homevitals` command is missing. Updating HomeVitals while it is still running (in the tray, by the clock) can remove that command: the installer deletes it, can't replace the file the window is running from, and stops. Every scheduled sync then failed with nothing in the log. The window now shows a message and a Windows notification when it starts, **Fix problems** lists it, and `homevitals --doctor` reports it, each with the way to repair it.
+- The README's update steps and the `homevitals --update` message now say to quit HomeVitals before updating.
+
 ## 1.0.6
 
 Updates from [eufy-sync](https://github.com/sturimcode/eufy-sync) 1.15.1 to 1.15.3.

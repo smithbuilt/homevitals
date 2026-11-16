@@ -741,11 +741,31 @@ def apply_taskbar_identity(app: App) -> None:
             repair_shortcuts_and_task(plan)
         except Exception:
             logger.exception("Checking the shortcuts and automatic sync failed")
+        try:
+            warn_if_automatic_sync_cannot_run(app)      # after the repair, which fixes a moved program itself
+        except Exception:
+            logger.exception("Checking automatic sync's program failed")
         for lnk in win_appid.our_shortcuts(gui_logic.SHORTCUT_NAME):
             if win_appid.read_shortcut_app_id(lnk) != win_appid.APP_ID and win_appid.set_shortcut_app_id(lnk):
                 logger.info("Gave the shortcut %s the window's taskbar ID", lnk)
 
     threading.Thread(target=fix_old_shortcuts, daemon=True).start()
+
+
+def warn_if_automatic_sync_cannot_run(app: App) -> None:
+    """Automatic sync is on but the program its task starts is gone: say so.
+
+    The task fails without a line in the log, so nothing else would tell the
+    household. The window is often started in the tray, where the message area
+    is out of sight; a notification goes out as well. Called from a worker thread.
+    """
+    missing = platform_support.missing_agent_command()
+    if not missing:
+        return
+    logger.warning("Automatic sync cannot run: its program is missing (%s)", missing)
+    app.post(lambda: app.say(gui_logic.autosync_command_missing_text(missing)))
+    with contextlib.suppress(Exception):
+        platform_support.notify(TITLE, "Automatic sync can't run. Open HomeVitals to see how to repair it.")
 
 
 def repair_shortcuts_and_task(plan: gui_logic.ShortcutPlan | None) -> None:

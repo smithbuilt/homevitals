@@ -919,3 +919,41 @@ def test_window_leaves_a_small_or_missing_log_alone(tmp_path):
     gui._rotate_log(log)
     assert log.read_text(encoding="utf-8") == "short"
     assert not (tmp_path / "sync.log.1").exists()
+
+
+class _SaysApp:
+    def __init__(self) -> None:
+        self.said: list[str] = []
+
+    def post(self, fn) -> None:
+        fn()
+
+    def say(self, text: str) -> None:
+        self.said.append(text)
+
+
+def test_window_warns_when_automatic_sync_has_no_program_to_start(monkeypatch, caplog):
+    notes: list[tuple[str, str]] = []
+    monkeypatch.setattr("homevitals.gui.platform_support.missing_agent_command", lambda: "C:\\bin\\homevitals.EXE")
+    monkeypatch.setattr("homevitals.gui.platform_support.notify", lambda title, message: notes.append((title, message)))
+    app = _SaysApp()
+
+    with caplog.at_level("WARNING", logger="homevitals.gui"):
+        gui.warn_if_automatic_sync_cannot_run(app)
+
+    assert len(app.said) == 1
+    assert "C:\\bin\\homevitals.EXE" in app.said[0]
+    assert "uv tool install homevitals --force" in app.said[0]
+    assert len(notes) == 1 and "Automatic sync can't run" in notes[0][1]
+    assert "its program is missing" in caplog.text
+
+
+def test_window_says_nothing_while_automatic_sync_can_run(monkeypatch):
+    notes: list[tuple] = []
+    monkeypatch.setattr("homevitals.gui.platform_support.missing_agent_command", lambda: None)
+    monkeypatch.setattr("homevitals.gui.platform_support.notify", lambda *a: notes.append(a))
+    app = _SaysApp()
+
+    gui.warn_if_automatic_sync_cannot_run(app)
+
+    assert app.said == [] and notes == []

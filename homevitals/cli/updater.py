@@ -13,7 +13,8 @@ from homevitals import install, platform_support
 from homevitals.cli import shared
 
 SELF_UPDATE_MESSAGE = (
-    "HomeVitals {version} doesn't update itself. To update it, run: uv tool upgrade homevitals "
+    "HomeVitals {version} doesn't update itself. To update it, quit the HomeVitals window first "
+    "(right-click its icon by the clock and choose Quit), then run: uv tool upgrade homevitals "
     "(or reinstall it the way you installed it)."
 )
 

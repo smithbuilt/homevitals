@@ -41,3 +41,8 @@ def test_macos_agent_status_warns_when_not_installed(tmp_path):
     assert status["label"] == "launch agent"
     assert status["detail"] == "not installed"
     assert status["fix"] == "homevitals --install-agent"
+
+
+def test_missing_agent_command_is_none_where_the_platform_has_no_such_check():
+    with patch.object(platform_support, "_impl", return_value=generic):
+        assert platform_support.missing_agent_command() is None

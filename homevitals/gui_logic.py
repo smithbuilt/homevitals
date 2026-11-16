@@ -655,7 +655,16 @@ class CheckResult:
                                 # "open_person" | None
 
 
-def autosync_result(installed: bool) -> CheckResult:
+def autosync_command_missing_text(command: str) -> str:
+    return (f"Automatic sync can't run: its program is missing ({command}). This happens when HomeVitals is "
+            "updated while this window is open. To repair it, quit HomeVitals (right-click its icon by the "
+            "clock and choose Quit), run  uv tool install homevitals --force  in a terminal, then open "
+            "HomeVitals again. Until then, Sync now still works.")
+
+
+def autosync_result(installed: bool, missing_command: str | None = None) -> CheckResult:
+    if installed and missing_command:
+        return CheckResult(False, autosync_command_missing_text(missing_command))
     if installed:
         return CheckResult(True, "Automatic sync is on (every 4 hours).")
     return CheckResult(False, "Automatic sync is off.", None, "turn_on_autosync")
@@ -724,7 +733,7 @@ def run_checks(config_path: Path, on_result: Callable[[CheckResult], None]) -> l
             return results
         migrate_legacy_tokens(config.users)
 
-        emit(autosync_result(platform_support.agent_installed()))
+        emit(autosync_result(platform_support.agent_installed(), platform_support.missing_agent_command()))
 
         accounts: dict[str, list] = {}
         for user in config.users:

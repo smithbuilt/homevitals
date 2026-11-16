@@ -460,3 +460,51 @@ def test_full_path_keeps_the_given_spelling(data_dir, tmp_path, monkeypatch):
     spelled = str(tmp_path / "Tools" / "homevitals.exe")
     with patch.object(windows.shutil, "which", return_value=spelled):
         assert windows._binary() == spelled
+
+
+def test_missing_agent_command_names_the_program_the_task_cannot_start(data_dir):
+    # An update run while the window was open: homevitals.exe is gone, the wrapper still starts it.
+    gone = str(data_dir / "bin" / "homevitals.EXE")
+    _write_current_wrapper(data_dir, gone)
+    with patch.object(windows.shutil, "which", return_value=None):
+        assert windows.missing_agent_command() == gone
+
+
+def test_missing_agent_command_is_none_while_the_program_is_there(data_dir):
+    binary = data_dir / "homevitals.EXE"
+    binary.write_bytes(b"")
+    _write_current_wrapper(data_dir, str(binary))
+    with patch.object(windows.shutil, "which", return_value=None):
+        assert windows.missing_agent_command() is None
+
+
+def test_missing_agent_command_leaves_a_moved_program_to_the_repair(data_dir):
+    _write_current_wrapper(data_dir, str(data_dir / "old" / "homevitals.EXE"))
+    with patch.object(windows.shutil, "which", return_value="C:\\Tools\\homevitals.exe"):
+        assert windows.missing_agent_command() is None
+
+
+def test_missing_agent_command_is_none_with_automatic_sync_off(data_dir):
+    with patch.object(windows.shutil, "which", return_value=None):
+        assert windows.missing_agent_command() is None
+
+
+def test_missing_agent_command_reads_an_older_cmd_wrapper(data_dir):
+    gone = str(data_dir / "homevitals.EXE")
+    log = str(data_dir / "sync.log")
+    line = f'cmd /c ""{gone}" --headless >> "{log}" 2>&1"'.replace('"', '""')
+    (data_dir / windows.WRAPPER_NAME).write_bytes(f'shell.Run "{line}", 0, True\r\n'.encode())
+    with patch.object(windows.shutil, "which", return_value=None):
+        assert windows.missing_agent_command() == gone
+
+
+def test_agent_status_fails_when_the_program_is_missing(data_dir):
+    gone = str(data_dir / "homevitals.EXE")
+    _write_current_wrapper(data_dir, gone)
+    with patch.object(windows.shutil, "which", return_value=None), \
+         patch.object(windows.subprocess, "run", return_value=_ok()):
+        status = windows.agent_status()
+
+    assert status["status"] == "FAIL"
+    assert gone in status["detail"]
+    assert "uv tool install homevitals --force" in status["fix"]

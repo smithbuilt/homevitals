@@ -479,6 +479,23 @@ def test_run_checks_logs_in_to_eufy_once_per_shared_login(fixtures, tmp_path):
     eufy_ctor.return_value.close.assert_called_once()
 
 
+def test_run_checks_says_when_automatic_sync_has_no_program_to_start(fixtures, tmp_path):
+    path = _household(tmp_path, fixtures)
+    with patch("homevitals.gui_logic.platform_support.missing_agent_command",
+               return_value="C:\\bin\\homevitals.EXE"):
+        results, *_ = _run(path)
+    first = results[0]
+    assert not first.ok
+    assert first.action is None
+    assert "C:\\bin\\homevitals.EXE" in first.text
+    assert "uv tool install homevitals --force" in first.text
+    assert "Quit" in first.text
+
+
+def test_autosync_off_wins_over_a_missing_program():
+    assert gui_logic.autosync_result(False, "C:\\bin\\homevitals.EXE").action == "turn_on_autosync"
+
+
 def test_run_checks_autosync_off_offers_turn_on(fixtures, tmp_path):
     path = _household(tmp_path, fixtures)
     results, *_ = _run(path, installed=False)

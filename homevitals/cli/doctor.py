@@ -349,7 +349,7 @@ def _check_version(report) -> None:
     try:
         from homevitals import __version__
         if updater._self_update_disabled():
-            report("PASS", "version", f"{__version__} (update with: uv tool upgrade homevitals)")
+            report("PASS", "version", f"{__version__} (update with: uv tool upgrade homevitals, after quitting the window)")
             return
         latest = updater._latest_pypi_version()
         if latest is None:
