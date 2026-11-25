@@ -46,7 +46,7 @@ HomeVitals never updates itself. To update it:
 
 Updating while HomeVitals is still running can leave the `homevitals` command missing, and automatic sync then stops. The window tells you when that has happened. To repair it, quit HomeVitals and run `uv tool install homevitals --force`.
 
-After a reinstall, Windows can tuck the HomeVitals icon behind the **^** arrow by the clock. It is still running; drag the icon back out next to the clock.
+After a reinstall, Windows can hide the HomeVitals icon by the clock. It is still running. Drag the icon back out from behind the **^** arrow, or, if there is no arrow, switch it on in Settings > Personalization > Taskbar > Other system tray icons (it may be listed as "Python").
 
 ## Setting up your household
 

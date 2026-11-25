@@ -183,7 +183,9 @@ def _run_household_sync(fixtures, tmp_path):
          patch.object(EufyClient, "_get_raw_records", lambda self, device, after: [dict(r) for r in raw]), \
          patch("homevitals.garmin_client.GarminClient", side_effect=garmin_factory),          patch("homevitals.sync.time.sleep"):
         for user in _household_user_configs():
-            sync_user(user, state, backfill_days=60, headless=True)
+            # A long look-back: the fixture's weigh-ins carry fixed dates, and a 60-day window
+            # started dropping them (and failing this test) once they were two months old.
+            sync_user(user, state, backfill_days=3650, headless=True)
     return uploads, state
 
 
